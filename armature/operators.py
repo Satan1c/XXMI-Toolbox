@@ -1,7 +1,9 @@
+from bpy.props import BoolProperty
 from bpy.types import Context, Object, Operator
 
 from ..common.utils import ToolError, object_mode, selected_meshes
 from . import attach, cleanup
+from .settings import CONNECT_DESCRIPTION, GATHER_DESCRIPTION
 
 
 def game_armature(context: Context) -> Object | None:
@@ -51,9 +53,16 @@ class XXMI_TOOLBOX_OT_clean_up_game_model(Operator):
 	bl_label = "Clean Up Game Model"
 	bl_description = (
 		"Once every dumped mesh is attached: delete the game model's meshes, what hangs under its armature (weapons, "
-		"props) and the bones no ID armature follows, keeping their parents. New pieces can't be attached afterwards"
+		"props), the empties left holding nothing (hiding the ones above the armature) and the bones no ID armature follows, keeping their parents. New pieces can't be attached afterwards"
 	)
 	bl_options = {"REGISTER", "UNDO"}
+
+	gather_ids: BoolProperty(
+		name="Into Collections", default=True, description=GATHER_DESCRIPTION
+	)  # type: ignore
+	connect_bones: BoolProperty(
+		name="Connect Bones", default=True, description=CONNECT_DESCRIPTION
+	)  # type: ignore
 
 	@classmethod
 	def poll(cls, context: Context) -> bool:
@@ -63,7 +72,12 @@ class XXMI_TOOLBOX_OT_clean_up_game_model(Operator):
 	def execute(self, context: Context) -> set[str]:
 		try:
 			with object_mode(context):
-				line = cleanup.clean_up(context, game_armature(context))
+				line = cleanup.clean_up(
+					context,
+					game_armature(context),
+					self.gather_ids,
+					self.connect_bones,
+				)
 		except ToolError as e:
 			self.report({"ERROR"}, str(e))
 			return {"CANCELLED"}
