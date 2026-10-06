@@ -69,14 +69,14 @@ jobs:
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-        # Release notes: a Changes section (what the release was created with, or empty to fill in), then the
-        # downloads and updates text, unless the notes already have it.
+        # Release notes: the template, with what the release was created with (or nothing, to fill in later) under
+        # its Changes heading, unless the notes already have the template's Downloads section.
         run: |
           notes="$RUNNER_TEMP/notes.md"
           body=$(gh release view "$TAG" --json body --jq .body 2> /dev/null || true)
           if ! grep -q "^## Downloads" <<< "$body"; then
-            printf '## Changes\n\n%s\n\n' "$body" > "$notes"
-            sed "s/{version}/$VERSION/g" .github/release-notes.md >> "$notes"
+            sed "s/{version}/$VERSION/g" .github/release-notes.md \
+              | BODY="$body" awk '{ print } /^## Changes/ && !done { print ""; print ENVIRON["BODY"]; done = 1 }' > "$notes"
           fi
           if gh release view "$TAG" > /dev/null 2>&1; then
             [ -f "$notes" ] && gh release edit "$TAG" --notes-file "$notes"

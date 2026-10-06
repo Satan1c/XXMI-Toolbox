@@ -25,6 +25,11 @@ class XXMI_TOOLBOX_Preferences(AddonPreferences):
 		max=30,
 		description="Days between automatic update checks",
 	)  # type: ignore
+	show_changes: BoolProperty(
+		name="Changes",
+		default=True,
+		description="Show what the latest release changed",
+	)  # type: ignore
 
 	def draw(self, context: Context) -> None:
 		from .updater.ui import draw_updater

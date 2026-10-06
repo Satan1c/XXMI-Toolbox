@@ -3,8 +3,9 @@ import shutil
 import ssl
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from .notes import changes_of
 from .version import Version, asset_name, parse_version
 
 REPOSITORY = "Satan1c/XXMI-Toolbox"
@@ -19,6 +20,7 @@ class Release:
 	tag: str
 	page: str
 	download_url: str | None
+	changes: list[str] = field(default_factory=list)
 
 
 def _ssl_context() -> ssl.SSLContext:
@@ -58,7 +60,13 @@ def latest_release() -> Release | None:
 		),
 		None,
 	)
-	return Release(version, data["tag_name"], data.get("html_url", RELEASES_PAGE), url)
+	return Release(
+		version,
+		data["tag_name"],
+		data.get("html_url", RELEASES_PAGE),
+		url,
+		changes_of(data.get("body") or ""),
+	)
 
 
 def download(url: str, path: str) -> None:

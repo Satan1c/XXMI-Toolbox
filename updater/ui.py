@@ -2,10 +2,11 @@ import time
 
 from bpy.types import Context, UILayout
 
-from ..preferences import preferences
+from ..preferences import XXMI_TOOLBOX_Preferences, preferences
 from . import install, operators, state
+from .notes import wrapped
 from .releases import RELEASES_PAGE
-from .version import version_text
+from .version import installed_version, version_text
 
 
 def _status(layout: UILayout) -> None:
@@ -40,19 +41,62 @@ def _status(layout: UILayout) -> None:
 	row.operator(check, text="", icon="FILE_REFRESH")
 
 
+def _text_width(context: Context) -> int:
+	"""About how many characters fit across the panel: labels don't wrap by themselves."""
+	region = context.region
+	if region is None:
+		return 60
+	return max(24, int(region.width / (7 * context.preferences.view.ui_scale)) - 4)
+
+
+def _paragraph(layout: UILayout, context: Context, text: str, icon: str) -> None:
+	column = layout.column(align=True)
+	for i, line in enumerate(wrapped([text], _text_width(context) - 3)):
+		column.label(text=line.strip(), icon=icon if i == 0 else "BLANK1")
+
+
+def _changes(
+	layout: UILayout, context: Context, prefs: XXMI_TOOLBOX_Preferences
+) -> None:
+	release = state.STATE.latest
+	if release is None or not release.changes:
+		return
+	box = layout.box()
+	row = box.row()
+	row.alignment = "LEFT"
+	current = " (installed)" if release.version == installed_version() else ""
+	row.prop(
+		prefs,
+		"show_changes",
+		text=f"Changes in {version_text(release.version)}{current}",
+		icon="DOWNARROW_HLT" if prefs.show_changes else "RIGHTARROW",
+		emboss=False,
+	)
+	if not prefs.show_changes:
+		return
+	column = box.column(align=True)
+	column.scale_y = 0.8
+	for line in wrapped(release.changes, _text_width(context)):
+		column.label(text=line)
+
+
 def draw_updater(layout: UILayout, context: Context) -> None:
 	column = layout.column()
 	if not state.online_access():
-		column.label(
-			text="Online access is off in Preferences > System", icon="INTERNET_OFFLINE"
+		_paragraph(
+			column,
+			context,
+			"Turn on Allow Online Access in Preferences > System",
+			"INTERNET_OFFLINE",
 		)
 	_status(column)
 	if state.STATE.error:
-		column.label(text=state.STATE.error, icon="ERROR")
+		_paragraph(column, context, state.STATE.error, "ERROR")
 	if install.is_development_copy():
-		column.label(text="Git checkout: update it with git", icon="INFO")
+		_paragraph(column, context, "Git checkout: update it with git", "INFO")
 
 	prefs = preferences(context)
+	_changes(column, context, prefs)
 	row = column.row()
 	row.prop(prefs, "auto_check_update")
 	sub = row.row()

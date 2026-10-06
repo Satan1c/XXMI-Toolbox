@@ -2,7 +2,7 @@ import json
 import os
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 import bpy
 
@@ -47,12 +47,28 @@ def load_state() -> None:
 		return
 	STATE.last_check = float(data.get("last_check", 0.0))
 	STATE.ignored = str(data.get("ignored", ""))
+	# The last answer, so the notice and the changes outlast a restart between checks.
+	latest = data.get("latest")
+	if isinstance(latest, dict):
+		try:
+			latest["version"] = tuple(latest["version"])
+			STATE.latest = Release(**latest)
+			STATE.checked = True
+		except (KeyError, TypeError):
+			pass
 
 
 def save_state() -> None:
 	try:
 		with open(_state_file(), "w", encoding="utf-8") as file:
-			json.dump({"last_check": STATE.last_check, "ignored": STATE.ignored}, file)
+			json.dump(
+				{
+					"last_check": STATE.last_check,
+					"ignored": STATE.ignored,
+					"latest": asdict(STATE.latest) if STATE.latest else None,
+				},
+				file,
+			)
 	except OSError:
 		pass
 
