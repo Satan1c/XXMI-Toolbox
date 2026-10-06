@@ -1,4 +1,5 @@
 import os
+import traceback
 
 import bpy
 
@@ -35,12 +36,17 @@ _modules = (
 	settings,
 	panels,
 )
-# Only present in local development copies.
+# Experimental tools are handed out separately and dropped into the add-on folder; updates keep them. One made for
+# another version must not take the rest of the add-on down with it.
+_experimental = None
 if os.path.isdir(os.path.join(os.path.dirname(__file__), "experimental")):
-	from . import experimental
-
-	_modules += (experimental,)
+	try:
+		from . import experimental as _experimental
+	except Exception:
+		print("XXMI Toolbox: experimental tools failed to load")
+		traceback.print_exc()
 _registered = False
+_experimental_registered = False
 
 
 def register():
@@ -54,12 +60,28 @@ def register():
 	for module in _modules:
 		module.register()
 	_registered = True
+	_register_experimental()
+
+
+def _register_experimental():
+	global _experimental_registered
+	if _experimental is None:
+		return
+	try:
+		_experimental.register()
+		_experimental_registered = True
+	except Exception:
+		print("XXMI Toolbox: experimental tools failed to register")
+		traceback.print_exc()
 
 
 def unregister():
-	global _registered
+	global _registered, _experimental_registered
 	if not _registered:
 		return
+	if _experimental_registered:
+		_experimental.unregister()
+		_experimental_registered = False
 	for module in reversed(_modules):
 		module.unregister()
 	_registered = False

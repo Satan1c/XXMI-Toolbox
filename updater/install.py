@@ -12,6 +12,8 @@ from .version import asset_name, parse_version
 _NEW = ADDON_DIR + ".new"
 _OLD = ADDON_DIR + ".old"
 _UNPACK = ADDON_DIR + ".unpack"
+# Handed out separately rather than released, so an update carries them over.
+_KEPT = ("experimental",)
 
 
 def is_development_copy() -> bool:
@@ -57,8 +59,13 @@ def _swap() -> None:
 		shutil.rmtree(_NEW, ignore_errors=True)
 		raise ToolError(f"Could not replace the add-on folder: {e}") from e
 	try:
+		for name in _KEPT:
+			kept = os.path.join(_OLD, name)
+			if os.path.isdir(kept) and not os.path.exists(os.path.join(_NEW, name)):
+				shutil.copytree(kept, os.path.join(_NEW, name))
 		os.replace(_NEW, ADDON_DIR)
 	except OSError as e:
+		shutil.rmtree(_NEW, ignore_errors=True)
 		os.replace(_OLD, ADDON_DIR)
 		raise ToolError(f"Could not replace the add-on folder: {e}") from e
 	shutil.rmtree(_OLD, ignore_errors=True)
