@@ -17,7 +17,7 @@ from . import (
 bl_info = {
 	"name": "XXMI Toolbox (Blender 3.6)",
 	"author": "Satan1c, SpectrumQT, LeoTorreZ, Gustav0, SilentNightSound",
-	"version": (0, 1, 0),
+	"version": (1, 0, 0),
 	"blender": (3, 6, 0),
 	"location": "View3D > Sidebar > XXMI / WWMI / EFMI Tools tabs",
 	"description": "Shared mesh and vertex group tools for XXMI modding add-ons",
