@@ -69,6 +69,18 @@ jobs:
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
+        # Release notes: a Changes section (what the release was created with, or empty to fill in), then the
+        # downloads and updates text, unless the notes already have it.
         run: |
-          gh release view "$TAG" > /dev/null 2>&1 || gh release create "$TAG" --verify-tag --generate-notes
+          notes="$RUNNER_TEMP/notes.md"
+          body=$(gh release view "$TAG" --json body --jq .body 2> /dev/null || true)
+          if ! grep -q "^## Downloads" <<< "$body"; then
+            printf '## Changes\n\n%s\n\n' "$body" > "$notes"
+            sed "s/{version}/$VERSION/g" .github/release-notes.md >> "$notes"
+          fi
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            [ -f "$notes" ] && gh release edit "$TAG" --notes-file "$notes"
+          else
+            gh release create "$TAG" --verify-tag --notes-file "$notes"
+          fi
           gh release upload "$TAG" dist/*.zip --clobber
