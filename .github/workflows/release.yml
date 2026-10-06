@@ -32,12 +32,13 @@ jobs:
         id: cache
         uses: actions/cache@v4
         with:
-          path: ${{ env.BLENDER }}
+          path: ${{ runner.temp }}/${{ env.BLENDER }}
           key: ${{ env.BLENDER }}
 
       - name: Download Blender
         if: steps.cache.outputs.cache-hit != 'true'
-        run: curl -sfL "https://download.blender.org/release/Blender4.2/$BLENDER.tar.xz" | tar xJ
+        # Outside the checkout: the build packs everything in the source folder that the manifest does not exclude.
+        run: curl -sfL "https://download.blender.org/release/Blender4.2/$BLENDER.tar.xz" | tar xJ -C "$RUNNER_TEMP"
 
       - name: Install Blender's system libraries
         run: sudo apt-get update -q && sudo apt-get install -yq libxi6 libxxf86vm1 libxfixes3 libxrender1 libxkbcommon0 libsm6 libgl1 libegl1
@@ -45,8 +46,13 @@ jobs:
       - name: Build
         run: |
           mkdir dist
-          "./$BLENDER/blender" --command extension validate .
-          "./$BLENDER/blender" --command extension build --source-dir . --output-dir dist
+          "$RUNNER_TEMP/$BLENDER/blender" --command extension validate .
+          "$RUNNER_TEMP/$BLENDER/blender" --command extension build --source-dir . --output-dir dist
+          size=$(stat -c %s "dist/xxmi_toolbox-$VERSION.zip")
+          if [ "$size" -gt 1000000 ]; then
+            echo "::error::The extension zip is $size bytes: something besides the add-on got packed"
+            exit 1
+          fi
           # Blender 3.6 installs add-ons from a zip holding their folder.
           mkdir -p legacy/xxmi_toolbox
           unzip -q "dist/xxmi_toolbox-$VERSION.zip" -d legacy/xxmi_toolbox
@@ -54,7 +60,7 @@ jobs:
 
       - name: Check the extension installs and registers
         run: |
-          "./$BLENDER/blender" -b --factory-startup --python-exit-code 1 --python-expr "
+          "$RUNNER_TEMP/$BLENDER/blender" -b --factory-startup --python-exit-code 1 --python-expr "
           import bpy
           bpy.ops.extensions.package_install_files(filepath='$PWD/dist/xxmi_toolbox-$VERSION.zip', repo='user_default', enable_on_install=True)
           assert hasattr(bpy.types.Scene, 'xxmi_toolbox'), 'XXMI Toolbox did not register'
