@@ -55,9 +55,10 @@ def _overlap(
 ) -> np.ndarray:
 	"""Matrix [target group, source group] of area-weighted weight overlap, or with similarity its cosine."""
 	verts, groups, weights = read_weights(target.data)
+	weights = weights * _vertex_areas(target.data)[verts]
+	# Vertices outside every face (dumped parts keep the whole buffer) have no area: their 0/0 cosine would be NaN.
 	keep = weights > 0.0
-	verts, groups = verts[keep], groups[keep]
-	weights = weights[keep] * _vertex_areas(target.data)[verts]
+	verts, groups, weights = verts[keep], groups[keep], weights[keep]
 
 	ref_verts, ref_groups, ref_weights, ref_names = reference
 	ref_source = np.array([source_index[name] for name in ref_names], dtype=np.int64)[
