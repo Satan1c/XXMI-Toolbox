@@ -1,0 +1,40 @@
+schema_version = "1.0.0"
+
+id = "xxmi_toolbox"
+version = "0.1.0"
+name = "XXMI Toolbox"
+tagline = "Shared mesh and vertex group tools for XXMI modding add-ons"
+maintainer = "Satan1c"
+type = "add-on"
+
+website = "https://github.com/Satan1c/XXMI-Toolbox"
+
+tags = ["Mesh", "Object"]
+
+blender_version_min = "4.2.0"
+
+license = [
+    "SPDX:GPL-3.0-or-later",
+]
+copyright = [
+    "2024-2026 SpectrumQT, LeoTorreZ, Gustav0, SilentNightSound, Satan1c",
+]
+
+[permissions]
+network = "Check GitHub for new releases and download them"
+files = "Save the downloaded update and the update check state"
+
+[build]
+paths_exclude_pattern = [
+    "__pycache__/",
+    "/.git/",
+    "/.gitignore",
+    "/.gitattributes",
+    "/.github/",
+    "/tests/",
+    "/experimental/",
+    "/.idea/",
+    "/ruff.toml",
+    "/.ruff_cache/",
+    "*.zip",
+]
