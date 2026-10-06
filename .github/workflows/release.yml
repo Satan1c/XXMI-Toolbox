@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.ref_name }}
+      # The oldest Blender the extension supports builds and checks it.
+      BLENDER: blender-4.2.9-linux-x64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches the add-on version
+        run: |
+          version="${TAG#v}"
+          manifest=$(sed -n 's/^version = "\(.*\)"$/\1/p' blender_manifest.toml)
+          legacy=$(python3 -c 'import ast; tree = ast.parse(open("__init__.py").read()); info = next(n.value for n in tree.body if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", None) == "bl_info"); print(".".join(map(str, ast.literal_eval(info)["version"])))')
+          if [ "$version" != "$manifest" ] || [ "$version" != "$legacy" ]; then
+            echo "::error::Tag $TAG, blender_manifest.toml $manifest, bl_info $legacy: make them match"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Cache Blender
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.BLENDER }}
+          key: ${{ env.BLENDER }}
+
+      - name: Download Blender
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: curl -sfL "https://download.blender.org/release/Blender4.2/$BLENDER.tar.xz" | tar xJ
+
+      - name: Install Blender's system libraries
+        run: sudo apt-get update -q && sudo apt-get install -yq libxi6 libxxf86vm1 libxfixes3 libxrender1 libxkbcommon0 libsm6 libgl1 libegl1
+
+      - name: Build
+        run: |
+          mkdir dist
+          "./$BLENDER/blender" --command extension validate .
+          "./$BLENDER/blender" --command extension build --source-dir . --output-dir dist
+          # Blender 3.6 installs add-ons from a zip holding their folder.
+          mkdir -p legacy/xxmi_toolbox
+          unzip -q "dist/xxmi_toolbox-$VERSION.zip" -d legacy/xxmi_toolbox
+          (cd legacy && zip -qr "../dist/xxmi_toolbox-$VERSION-legacy.zip" xxmi_toolbox)
+
+      - name: Check the extension installs and registers
+        run: |
+          "./$BLENDER/blender" -b --factory-startup --python-exit-code 1 --python-expr "
+          import bpy
+          bpy.ops.extensions.package_install_files(filepath='$PWD/dist/xxmi_toolbox-$VERSION.zip', repo='user_default', enable_on_install=True)
+          assert hasattr(bpy.types.Scene, 'xxmi_toolbox'), 'XXMI Toolbox did not register'
+          "
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$TAG" > /dev/null 2>&1 || gh release create "$TAG" --verify-tag --generate-notes
+          gh release upload "$TAG" dist/*.zip --clobber
