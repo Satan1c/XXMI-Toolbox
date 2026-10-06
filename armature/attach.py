@@ -4,7 +4,7 @@ from contextlib import contextmanager
 import bpy
 import numpy as np
 from bpy.types import ArmatureEditBones, Context, Object
-from mathutils import Matrix
+from mathutils import Matrix, Vector
 
 from ..common.transfer import joined_source
 from ..common.utils import ToolError
@@ -21,6 +21,8 @@ MAX_OFFSET = 0.05
 # A mirror must beat the game model's own orientation by this much: a symmetric dump can't tell them apart.
 CLEAR_WIN = 0.7
 _MIRROR_X = Matrix.Scale(-1.0, 4, (1.0, 0.0, 0.0))
+# Bounding boxes whose sizes differ by less than this share of the dumped mesh's diagonal are the same mesh.
+SAME_SIZE = 0.005
 
 
 class Space:
@@ -41,13 +43,17 @@ def game_armature(obj: Object | None) -> Object | None:
 	return obj.get(GAME_ARMATURE_KEY) or obj
 
 
-def _centres(obj: Object) -> dict[str, np.ndarray]:
+def _world_co(obj: Object) -> np.ndarray:
+	co = np.empty(len(obj.data.vertices) * 3)
+	obj.data.vertices.foreach_get("co", co)
+	matrix = np.array(obj.matrix_world)
+	return co.reshape(-1, 3) @ matrix[:3, :3].T + matrix[:3, 3]
+
+
+def group_centres(obj: Object) -> dict[str, np.ndarray]:
 	"""{group name: world-space weighted centre} of the groups with weights."""
 	mesh = obj.data
-	co = np.empty(len(mesh.vertices) * 3)
-	mesh.vertices.foreach_get("co", co)
-	matrix = np.array(obj.matrix_world)
-	co = co.reshape(-1, 3) @ matrix[:3, :3].T + matrix[:3, 3]
+	co = _world_co(obj)
 	verts, groups, weights = read_weights(mesh)
 	count = len(obj.vertex_groups)
 	total = np.bincount(groups, weights, minlength=count)
@@ -65,15 +71,54 @@ def _centres(obj: Object) -> dict[str, np.ndarray]:
 	}
 
 
+def _bounds(obj: Object) -> tuple[np.ndarray, np.ndarray]:
+	co = _world_co(obj)
+	return co.min(0), co.max(0)
+
+
+def _shift(game: list[Object], dumped: list[Object]) -> Vector | None:
+	"""How far the dump sits from the game model, told by dumped meshes that are a game mesh moved: a game can draw
+	the character off its rig's origin (on its soles rather than its heels)."""
+	game_bounds = [_bounds(obj) for obj in game if len(obj.data.vertices)]
+	shifts, tolerance = [], 0.0
+	for obj in dumped:
+		low, high = _bounds(obj)
+		size = high - low
+		tolerance = max(tolerance, SAME_SIZE * float(np.linalg.norm(size)))
+		shifts += [
+			(low + high - game_low - game_high) / 2
+			for game_low, game_high in game_bounds
+			if np.abs(game_high - game_low - size).max()
+			< SAME_SIZE * np.linalg.norm(size)
+		]
+	if not shifts:
+		return None
+	shifts = np.array(shifts)
+	median = np.median(shifts, 0)
+	# Most pairs must agree: one coincidental match in size says nothing.
+	agree = np.linalg.norm(shifts - median, axis=1) < tolerance
+	if agree.sum() * 2 <= len(shifts) or np.linalg.norm(median) < tolerance:
+		return None
+	return Vector(shifts[agree].mean(0))
+
+
+def _move(rig: Object, game: list[Object], matrix: Matrix) -> None:
+	# Children follow their parent, so only the top of the game model is moved.
+	moved = {rig, *game}
+	for obj in moved:
+		if obj.parent not in moved:
+			obj.matrix_world = matrix @ obj.matrix_world
+
+
 def _align(
 	rig: Object, game: list[Object], dumped: list[Object], settled: bool
 ) -> bool:
 	"""Mirror the game model if that's how it lines up with the dump, unless earlier pieces already settled it."""
 	game_centres = np.array(
-		[centre for obj in game for centre in _centres(obj).values()]
+		[centre for obj in game for centre in group_centres(obj).values()]
 	)
 	dumped_centres = np.array(
-		[centre for obj in dumped for centre in _centres(obj).values()]
+		[centre for obj in dumped for centre in group_centres(obj).values()]
 	)
 	if not len(game_centres) or not len(dumped_centres):
 		raise ToolError(
@@ -96,11 +141,8 @@ def _align(
 		)
 	if mirrored >= as_is * CLEAR_WIN:
 		return False
-	# Importers disagree on handedness. Children follow their parent, so only the top of the game model is moved.
-	moved = {rig, *game}
-	for obj in moved:
-		if obj.parent not in moved:
-			obj.matrix_world = _MIRROR_X @ obj.matrix_world
+	# Importers disagree on handedness.
+	_move(rig, game, _MIRROR_X)
 	return True
 
 
@@ -240,6 +282,11 @@ def attach(context: Context, rig: Object, dumped: list[Object]) -> list[str]:
 			"Select the dumped meshes too: meshes with numbered vertex groups"
 		)
 	spaces = existing_spaces(context, rig)
+	# Moving the game model once pieces follow it would move them too.
+	shift = None if spaces else _shift(game, dumped)
+	if shift is not None:
+		_move(rig, game, Matrix.Translation(shift))
+		context.view_layer.update()
 	mirrored = _align(rig, game, dumped, settled=bool(spaces))
 	maps = _bone_maps(context, rig, game, dumped)
 	known = len(spaces)
@@ -275,6 +322,10 @@ def attach(context: Context, rig: Object, dumped: list[Object]) -> list[str]:
 		f"{attached} meshes follow {rig.name} through {sum(bool(space.meshes) for space in spaces)} ID armatures"
 		f" ({len(spaces) - known} new)"
 	]
+	if shift is not None:
+		lines.append(
+			f"moved {rig.name} and its meshes by ({shift.x:.4f}, {shift.y:.4f}, {shift.z:.4f}) to match the dump"
+		)
 	if mirrored:
 		lines.append(f"mirrored {rig.name} and its meshes to match the dump")
 	if unmatched:
