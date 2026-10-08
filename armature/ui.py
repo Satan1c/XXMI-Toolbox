@@ -24,6 +24,7 @@ def draw_armature(layout: UILayout, context: Context) -> None:
 	column.operator(
 		operators.XXMI_TOOLBOX_OT_save_game_armature.bl_idname, icon="EXPORT"
 	)
+	column.operator(operators.XXMI_TOOLBOX_OT_save_clean_model.bl_idname, icon="EXPORT")
 	column.operator(
 		operators.XXMI_TOOLBOX_OT_add_saved.bl_idname, text="Add Saved", icon="IMPORT"
 	)

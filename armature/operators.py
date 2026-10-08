@@ -7,7 +7,7 @@ from bpy_extras.io_utils import ExportHelper, ImportHelper
 
 from ..common.library import add_saved
 from ..common.utils import ToolError, object_mode, selected_meshes
-from . import attach, cleanup, save
+from . import attach, clean_model, cleanup, save
 from .settings import CONNECT_DESCRIPTION, GATHER_DESCRIPTION
 
 
@@ -146,10 +146,38 @@ class XXMI_TOOLBOX_OT_save_game_armature(_SaveBlend, Operator):
 		return save.save(context, game_armature(context), self.filepath)
 
 
+def _rigged(context: Context) -> list[Object]:
+	return [obj for obj in selected_meshes(context) if obj.find_armature()]
+
+
+class XXMI_TOOLBOX_OT_save_clean_model(_SaveBlend, Operator):
+	bl_idname = "xxmi_toolbox.save_clean_model"
+	bl_label = "Save Clean Model"
+	bl_description = (
+		"Save the selected rigged meshes to a new .blend as a plain model: modifiers (but Subdivision) applied, and "
+		"an armature of just the deform bones they use, with no controls, constraints, "
+		"drivers or widgets. Add it to a mod project with Add Saved. This file is left as it is"
+	)
+	saved = "clean model"
+
+	@classmethod
+	def poll(cls, context: Context) -> bool:
+		return bool(_rigged(context))
+
+	def saved_name(self, context: Context) -> str:
+		return clean_model.main_rig(_rigged(context)).name
+
+	def save(self, context: Context) -> str:
+		with object_mode(context):
+			return clean_model.save_clean_model(
+				context, _rigged(context), self.filepath
+			)
+
+
 class XXMI_TOOLBOX_OT_add_saved(Operator, ImportHelper):
 	bl_idname = "xxmi_toolbox.add_saved"
 	bl_label = "Add Saved"
-	bl_description = "Add a game armature saved with Save Game Armature to this scene"
+	bl_description = "Add a model saved with Save Clean Model, or a game armature saved with Save Game Armature, to this scene"
 	bl_options = {"REGISTER", "UNDO"}
 	filename_ext = ".blend"
 	filter_glob: StringProperty(default="*.blend", options={"HIDDEN"})  # type: ignore
