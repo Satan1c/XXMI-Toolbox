@@ -22,7 +22,7 @@ copyright = [
 
 [permissions]
 network = "Check GitHub for new releases and download them"
-files = "Save the downloaded update and the update check state"
+files = "Save updates, the update check state and saved armatures"
 
 [build]
 paths_exclude_pattern = [

@@ -1,8 +1,12 @@
+import os
+
+import bpy
 from bpy.props import BoolProperty
-from bpy.types import Context, Object, Operator
+from bpy.types import Context, Event, Object, Operator
+from bpy_extras.io_utils import ExportHelper
 
 from ..common.utils import ToolError, object_mode, selected_meshes
-from . import attach, cleanup
+from . import attach, cleanup, save
 from .settings import CONNECT_DESCRIPTION, GATHER_DESCRIPTION
 
 
@@ -83,3 +87,59 @@ class XXMI_TOOLBOX_OT_clean_up_game_model(Operator):
 			return {"CANCELLED"}
 		self.report({"INFO"}, line)
 		return {"FINISHED"}
+
+
+class _SaveBlend(ExportHelper):
+	"""Writes a .blend to add with Add Saved: named after what it saves, next to this file, never over it."""
+
+	filename_ext = ".blend"
+	saved = ""
+
+	def saved_name(self, context: Context) -> str:
+		raise NotImplementedError
+
+	def save(self, context: Context) -> str:
+		raise NotImplementedError
+
+	def invoke(self, context: Context, event: Event) -> set[str]:
+		if not self.filepath:
+			folder = os.path.dirname(bpy.data.filepath) or os.path.expanduser("~")
+			name = bpy.path.clean_name(self.saved_name(context))
+			self.filepath = os.path.join(folder, f"{name}.blend")
+		return ExportHelper.invoke(self, context, event)
+
+	def execute(self, context: Context) -> set[str]:
+		this_file = bpy.data.filepath
+		if this_file and os.path.abspath(self.filepath) == os.path.abspath(this_file):
+			self.report(
+				{"ERROR"}, f"Save the {self.saved} to another file than this one"
+			)
+			return {"CANCELLED"}
+		try:
+			line = self.save(context)
+		except ToolError as e:
+			self.report({"ERROR"}, str(e))
+			return {"CANCELLED"}
+		self.report({"INFO"}, line)
+		return {"FINISHED"}
+
+
+class XXMI_TOOLBOX_OT_save_game_armature(_SaveBlend, Operator):
+	bl_idname = "xxmi_toolbox.save_game_armature"
+	bl_label = "Save Game Armature"
+	bl_description = (
+		"Save the game armature and its ID armatures to a .blend for other mods of this character: add it there "
+		"with Add Saved, select it with new dumped meshes and Attach to Game Armature, no game model needed"
+	)
+	saved = "game armature"
+
+	@classmethod
+	def poll(cls, context: Context) -> bool:
+		rig = game_armature(context)
+		return rig is not None and bool(attach.existing_spaces(context, rig))
+
+	def saved_name(self, context: Context) -> str:
+		return game_armature(context).name
+
+	def save(self, context: Context) -> str:
+		return save.save(context, game_armature(context), self.filepath)

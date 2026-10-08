@@ -20,3 +20,7 @@ def draw_armature(layout: UILayout, context: Context) -> None:
 	row = column.row(align=True)
 	row.prop(settings, "gather_ids", toggle=True)
 	row.prop(settings, "connect_bones", toggle=True)
+	column = layout.column(align=True)
+	column.operator(
+		operators.XXMI_TOOLBOX_OT_save_game_armature.bl_idname, icon="EXPORT"
+	)

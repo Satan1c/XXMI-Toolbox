@@ -6,13 +6,18 @@ import numpy as np
 from bpy.types import ArmatureEditBones, Context, Object
 from mathutils import Matrix, Vector
 
+from ..common.library import GAME_ARMATURE_KEY
 from ..common.transfer import joined_source
 from ..common.utils import ToolError, follow, world_positions
 from ..vertex_groups.ids import vg_id
 from ..vertex_groups.remap import overlaps
 from ..vertex_groups.weights import read_weights
 
-GAME_ARMATURE_KEY = "XXMI_Toolbox:GameArmature"
+# {ID: centre of the dumped vertices it weighs, in the ID armature's space}:
+# lets a saved game armature take new dumped meshes without the game meshes.
+CENTRES_KEY = "XXMI_Toolbox:Centres"
+# Recorded and new centres closer than this share of the dump's size are the same group.
+SAME_PLACE = 0.02
 # Share of the IDs two meshes both use that must land on the same game bones for them to share an ID space.
 SAME_SPACE = 0.9
 # Mean distance from a dumped group's centre to the nearest game bone's, relative to the dump's size, past which
@@ -254,6 +259,90 @@ def _build(context: Context, rig: Object, space: Space) -> Object:
 	return armature
 
 
+def record_centres(space: Space) -> None:
+	armature = space.armature
+	inverse = armature.matrix_world.inverted()
+	stored = dict(armature.get(CENTRES_KEY, {}))
+	for obj in space.meshes:
+		for name, centre in group_centres(obj).items():
+			group_id = vg_id(name)
+			if group_id in space.bones:
+				stored.setdefault(str(group_id), list(inverse @ Vector(centre)))
+	armature[CENTRES_KEY] = stored
+
+
+def _recorded_centres(spaces: list[Space]) -> dict[Space, dict[int, Vector]]:
+	"""Per saved ID armature, {ID: its recorded group centre, in world space}."""
+	return {
+		space: {
+			int(key): space.armature.matrix_world @ Vector(value)
+			for key, value in space.armature.get(CENTRES_KEY, {}).items()
+		}
+		for space in spaces
+	}
+
+
+def _place_tolerance(recorded: dict[Space, dict[int, Vector]]) -> float:
+	"""How near a centre must be to a recorded one to be the same group: a share of the recorded dump's size."""
+	points = np.array([p for centres in recorded.values() for p in centres.values()])
+	size = float(np.linalg.norm(points.max(0) - points.min(0)))
+	return SAME_PLACE * (size or 1.0)
+
+
+def _saved_space(
+	centres: dict[int, Vector],
+	recorded: dict[Space, dict[int, Vector]],
+	tolerance: float,
+) -> Space | None:
+	"""The saved ID armature whose recorded centres most of the mesh's group centres sit on."""
+	best, best_close = None, 0
+	for space, known in recorded.items():
+		shared = [group_id for group_id in centres if group_id in known]
+		close = sum(
+			(centres[group_id] - known[group_id]).length < tolerance
+			for group_id in shared
+		)
+		if shared and close >= SAME_SPACE * len(shared) and close > best_close:
+			best, best_close = space, close
+	return best
+
+
+def _attach_saved(rig: Object, dumped: list[Object], spaces: list[Space]) -> list[str]:
+	"""Attach dumped meshes to the saved ID armature whose recorded centres they share."""
+	recorded = _recorded_centres(spaces)
+	tolerance = _place_tolerance(recorded)
+
+	attached, unmatched, unknown = 0, [], 0
+	for obj in dumped:
+		centres = {
+			vg_id(name): Vector(centre) for name, centre in group_centres(obj).items()
+		}
+		space = _saved_space(centres, recorded, tolerance)
+		if space is None:
+			unmatched.append(obj.name)
+			continue
+		unknown += sum(group_id not in space.bones for group_id in centres)
+		follow(obj, space.armature)
+		attached += 1
+
+	for space in spaces:
+		space.armature.hide_set(True)
+
+	lines = [f"{attached} meshes follow {rig.name} through its saved ID armatures"]
+	if unmatched:
+		lines.append(f"no saved ID armature fits {', '.join(sorted(unmatched))}")
+	if unknown:
+		lines.append(
+			f"{unknown} vertex groups have IDs the saved armature has no bone for: attach them with the game model"
+		)
+	return lines
+
+
+def _numbered(obj: Object) -> bool:
+	"""Whether the mesh has vertex groups named by ID, as dumped meshes do."""
+	return any(vg_id(vg.name) is not None for vg in obj.vertex_groups)
+
+
 def attach(context: Context, rig: Object, dumped: list[Object]) -> list[str]:
 	game = [
 		obj
@@ -261,15 +350,14 @@ def attach(context: Context, rig: Object, dumped: list[Object]) -> list[str]:
 		if obj.type == "MESH" and obj.find_armature() == rig
 	]
 	if not game:
+		spaces = existing_spaces(context, rig)
+		numbered = [obj for obj in dumped if _numbered(obj)]
+		if numbered and any(space.armature.get(CENTRES_KEY) for space in spaces):
+			return _attach_saved(rig, numbered, spaces)
 		raise ToolError(
 			f"No meshes are deformed by {rig.name}: import the game model with its meshes"
 		)
-	dumped = [
-		obj
-		for obj in dumped
-		if obj not in game
-		and any(vg_id(vg.name) is not None for vg in obj.vertex_groups)
-	]
+	dumped = [obj for obj in dumped if obj not in game and _numbered(obj)]
 	if not dumped:
 		raise ToolError(
 			"Select the dumped meshes too: meshes with numbered vertex groups"
@@ -304,6 +392,7 @@ def attach(context: Context, rig: Object, dumped: list[Object]) -> list[str]:
 		armature.hide_set(True)
 		for obj in space.meshes:
 			follow(obj, armature)
+		record_centres(space)
 
 	attached = sum(len(space.meshes) for space in spaces)
 	lines = [
