@@ -160,6 +160,17 @@ class XXMI_TOOLBOX_OT_save_clean_model(_SaveBlend, Operator):
 	)
 	saved = "clean model"
 
+	drop_empty_uvs: BoolProperty(
+		name="Drop Empty UV Maps",
+		default=True,
+		description="Leave out UV maps that give less than a tenth of the faces any area: leftovers, not textures",
+	)  # type: ignore
+	rename_uvs: BoolProperty(
+		name="Name UV Maps UV0, UV1...",
+		default=True,
+		description="Name the UV maps in order, the main one first, so Model Swap can tell them apart by number",
+	)  # type: ignore
+
 	@classmethod
 	def poll(cls, context: Context) -> bool:
 		return bool(_rigged(context))
@@ -170,7 +181,11 @@ class XXMI_TOOLBOX_OT_save_clean_model(_SaveBlend, Operator):
 	def save(self, context: Context) -> str:
 		with object_mode(context):
 			return clean_model.save_clean_model(
-				context, _rigged(context), self.filepath
+				context,
+				_rigged(context),
+				self.filepath,
+				self.drop_empty_uvs,
+				self.rename_uvs,
 			)
 
 

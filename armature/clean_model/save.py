@@ -8,6 +8,7 @@ from .keys import add_shape_keys
 from .materials import DetachedMaterials
 from .rigs import keep_own_groups, main_rig, rig_parts
 from .skeleton import deform_skeleton, influence
+from .uvs import tidy_uvs
 
 # Armature modifier settings the copies keep from their originals.
 _DEFORM_SETTINGS = (
@@ -68,6 +69,8 @@ def save_clean_model(
 	context: Context,
 	meshes: list[Object],
 	filepath: str,
+	drop_empty_uvs: bool = True,
+	rename_uvs: bool = True,
 ) -> str:
 	"""Save the meshes and the deform bones they use as a plain model:
 	modifiers applied (into each shape key too), no rig controls or drivers, nothing else from the file."""
@@ -82,6 +85,9 @@ def save_clean_model(
 	copies = {
 		obj: bpy.data.objects.new(obj.name, mesh) for obj, (mesh, _) in baked.items()
 	}
+	dropped_uvs = sum(
+		tidy_uvs(mesh, drop_empty_uvs, rename_uvs) for mesh, _ in baked.values()
+	)
 
 	skeleton, materials = None, DetachedMaterials()
 	try:
@@ -110,6 +116,8 @@ def save_clean_model(
 			f"left out meshes of armatures that don't follow {rig.name}: "
 			+ ", ".join(left_out)
 		)
+	if dropped_uvs:
+		notes.append(f"dropped {dropped_uvs} UV maps that barely cover any faces")
 	if skipped:
 		notes.append(
 			"shape keys a modifier changes the vertex count of were left out: "
