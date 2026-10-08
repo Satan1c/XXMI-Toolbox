@@ -5,7 +5,7 @@ import bpy
 from bpy.types import Context, EditBone, Object
 from mathutils import Matrix, Vector
 
-from ..common.utils import ToolError
+from ..common.utils import ToolError, deformed_by
 from ..vertex_groups.ids import vg_id
 from .attach import Space, editing, existing_spaces, group_centres
 
@@ -238,14 +238,7 @@ def clean_up(
 			f"Nothing follows {rig.name} yet: attach the dumped meshes first"
 		)
 	armatures = {space.armature for space in spaces}
-	attached = {
-		obj
-		for obj in context.scene.objects
-		if obj.type == "MESH"
-		and any(
-			mod.type == "ARMATURE" and mod.object in armatures for mod in obj.modifiers
-		)
-	}
+	attached = set(deformed_by(context.scene.objects, armatures))
 	doomed = {
 		obj
 		for obj in context.scene.objects
@@ -290,16 +283,10 @@ def clean_up(
 	if gather_ids:
 		for space in spaces:
 			# Largest first: a tie between collections goes to the main piece's.
-			space.meshes = [
-				obj
-				for obj in sorted(
-					attached, key=lambda obj: (-len(obj.data.polygons), obj.name)
-				)
-				if any(
-					mod.type == "ARMATURE" and mod.object == space.armature
-					for mod in obj.modifiers
-				)
-			]
+			space.meshes = deformed_by(
+				sorted(attached, key=lambda obj: (-len(obj.data.polygons), obj.name)),
+				{space.armature},
+			)
 		moved = sum(_gather(space) for space in spaces)
 		line += f"; moved {moved} ID armatures to their meshes' collections"
 	return line

@@ -7,7 +7,7 @@ from bpy.types import ArmatureEditBones, Context, Object
 from mathutils import Matrix, Vector
 
 from ..common.transfer import joined_source
-from ..common.utils import ToolError
+from ..common.utils import ToolError, follow, world_positions
 from ..vertex_groups.ids import vg_id
 from ..vertex_groups.remap import overlaps
 from ..vertex_groups.weights import read_weights
@@ -43,17 +43,10 @@ def game_armature(obj: Object | None) -> Object | None:
 	return obj.get(GAME_ARMATURE_KEY) or obj
 
 
-def _world_co(obj: Object) -> np.ndarray:
-	co = np.empty(len(obj.data.vertices) * 3)
-	obj.data.vertices.foreach_get("co", co)
-	matrix = np.array(obj.matrix_world)
-	return co.reshape(-1, 3) @ matrix[:3, :3].T + matrix[:3, 3]
-
-
 def group_centres(obj: Object) -> dict[str, np.ndarray]:
 	"""{group name: world-space weighted centre} of the groups with weights."""
 	mesh = obj.data
-	co = _world_co(obj)
+	co = world_positions(obj)
 	verts, groups, weights = read_weights(mesh)
 	count = len(obj.vertex_groups)
 	total = np.bincount(groups, weights, minlength=count)
@@ -72,7 +65,7 @@ def group_centres(obj: Object) -> dict[str, np.ndarray]:
 
 
 def _bounds(obj: Object) -> tuple[np.ndarray, np.ndarray]:
-	co = _world_co(obj)
+	co = world_positions(obj)
 	return co.min(0), co.max(0)
 
 
@@ -310,12 +303,7 @@ def attach(context: Context, rig: Object, dumped: list[Object]) -> list[str]:
 		armature = _build(context, rig, space)
 		armature.hide_set(True)
 		for obj in space.meshes:
-			modifier = next(
-				(mod for mod in obj.modifiers if mod.type == "ARMATURE"), None
-			)
-			if modifier is None:
-				modifier = obj.modifiers.new("Armature", "ARMATURE")
-			modifier.object = armature
+			follow(obj, armature)
 
 	attached = sum(len(space.meshes) for space in spaces)
 	lines = [
