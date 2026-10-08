@@ -22,7 +22,7 @@ copyright = [
 
 [permissions]
 network = "Check GitHub for new releases and download them"
-files = "Save updates, the update check state, saved models and armatures"
+files = "Save updates, update state, saved models and mod textures"
 
 [build]
 paths_exclude_pattern = [

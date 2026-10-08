@@ -10,6 +10,7 @@ from . import (
 	panels,
 	preferences,
 	settings,
+	textures,
 	updater,
 	vertex_groups,
 )
@@ -31,6 +32,7 @@ _modules = (
 	mesh,
 	model_swap,
 	armature,
+	textures,
 	preferences,
 	updater,
 	settings,
