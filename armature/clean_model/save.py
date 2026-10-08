@@ -4,6 +4,7 @@ from bpy.types import Context, Object
 from ...common.library import write_objects
 from ...common.utils import ToolError, armature_modifier
 from .bake import baked_meshes
+from .keys import add_shape_keys
 from .materials import DetachedMaterials
 from .rigs import keep_own_groups, main_rig, rig_parts
 from .skeleton import deform_skeleton, influence
@@ -69,7 +70,7 @@ def save_clean_model(
 	filepath: str,
 ) -> str:
 	"""Save the meshes and the deform bones they use as a plain model:
-	modifiers applied, no rig controls or drivers, nothing else from the file."""
+	modifiers applied (into each shape key too), no rig controls or drivers, nothing else from the file."""
 	rig = main_rig(meshes)
 	if rig is None:
 		raise ToolError("Select meshes deformed by an armature")
@@ -77,8 +78,10 @@ def save_clean_model(
 	part_of = {part.rig: part for part in parts}
 	meshes = [obj for obj in meshes if obj.find_armature() in part_of]
 
-	baked = baked_meshes(context, meshes)
-	copies = {obj: bpy.data.objects.new(obj.name, mesh) for obj, mesh in baked.items()}
+	baked, skipped = baked_meshes(context, meshes)
+	copies = {
+		obj: bpy.data.objects.new(obj.name, mesh) for obj, (mesh, _) in baked.items()
+	}
 
 	skeleton, materials = None, DetachedMaterials()
 	try:
@@ -90,6 +93,7 @@ def save_clean_model(
 
 		for obj, copy in copies.items():
 			_rig_copy(copy, obj, skeleton)
+			add_shape_keys(copy, obj, baked[obj][1])
 			materials.swap(copy)
 		_write(filepath, rig, skeleton, copies, materials)
 	finally:
@@ -105,5 +109,10 @@ def save_clean_model(
 		notes.append(
 			f"left out meshes of armatures that don't follow {rig.name}: "
 			+ ", ".join(left_out)
+		)
+	if skipped:
+		notes.append(
+			"shape keys a modifier changes the vertex count of were left out: "
+			+ ", ".join(skipped)
 		)
 	return "; ".join(notes)

@@ -154,8 +154,8 @@ class XXMI_TOOLBOX_OT_save_clean_model(_SaveBlend, Operator):
 	bl_idname = "xxmi_toolbox.save_clean_model"
 	bl_label = "Save Clean Model"
 	bl_description = (
-		"Save the selected rigged meshes to a new .blend as a plain model: modifiers (but Subdivision) applied, and "
-		"an armature of just the deform bones they use, with no controls, constraints, "
+		"Save the selected rigged meshes to a new .blend as a plain model: modifiers (but Subdivision) applied, into "
+		"each shape key too, and an armature of just the deform bones they use, with no controls, constraints, "
 		"drivers or widgets. Add it to a mod project with Add Saved. This file is left as it is"
 	)
 	saved = "clean model"
