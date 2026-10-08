@@ -17,6 +17,21 @@ def _meshes(items: Iterable[XXMI_TOOLBOX_ObjectItem]) -> list[Object]:
 	return seen
 
 
+def sync_uv_slots(settings: XXMI_TOOLBOX_ModelSwapSettings) -> None:
+	"""One slot per UV map of the first source, keeping the choices made for names it still has;
+	a new one is filled from the target map in the same place."""
+	sources = _meshes(settings.sources)
+	names = [layer.name for layer in sources[0].data.uv_layers] if sources else []
+	if [item.name for item in settings.uv_slots] == names:
+		return
+	chosen = {item.name: (item.slot, item.fill) for item in settings.uv_slots}
+	settings.uv_slots.clear()
+	for position, name in enumerate(names, 1):
+		item = settings.uv_slots.add()
+		item.name = name
+		item.slot, item.fill = chosen.get(name, (position, "AUTO"))
+
+
 def _swap_objects(
 	context: Context,
 ) -> tuple[XXMI_TOOLBOX_ModelSwapSettings, list[Object], list[Object]]:
@@ -79,10 +94,13 @@ class XXMI_TOOLBOX_OT_model_swap(_SwapOperator, Operator):
 			return {"CANCELLED"}
 		with object_mode(context):
 			try:
+				sync_uv_slots(settings)
 				messages = swap.model_swap(
 					context,
 					sources,
 					targets,
+					uv_slots=[item.slot for item in settings.uv_slots],
+					uv_modes=[item.fill for item in settings.uv_slots],
 					uvs=settings.swap_uvs,
 					colors=settings.swap_colors,
 					weights=settings.swap_weights,
@@ -154,6 +172,7 @@ class XXMI_TOOLBOX_OT_list_add_selected(Operator):
 		for obj in context.selected_objects:
 			if obj.type == "MESH" and obj not in present and obj not in skipped:
 				items.add().object = obj
+		sync_uv_slots(context.scene.xxmi_toolbox.model_swap)
 		return {"FINISHED"}
 
 
@@ -170,6 +189,7 @@ class XXMI_TOOLBOX_OT_list_remove(Operator):
 		items, _ = _side_lists(context, self.side)
 		if 0 <= self.index < len(items):
 			items.remove(self.index)
+		sync_uv_slots(context.scene.xxmi_toolbox.model_swap)
 		return {"FINISHED"}
 
 
@@ -183,4 +203,5 @@ class XXMI_TOOLBOX_OT_list_clear(Operator):
 
 	def execute(self, context: Context) -> set[str]:
 		_side_lists(context, self.side)[0].clear()
+		sync_uv_slots(context.scene.xxmi_toolbox.model_swap)
 		return {"FINISHED"}

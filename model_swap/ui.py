@@ -39,6 +39,15 @@ def draw_model_swap(layout: UILayout, context: Context) -> None:
 	row.prop(settings, "swap_uvs", toggle=True)
 	row.prop(settings, "swap_colors", toggle=True)
 	row.prop(settings, "swap_weights", text="VGs", toggle=True)
+	if settings.swap_uvs and len(settings.uv_slots):
+		column = layout.box().column(align=True)
+		column.label(text="UV maps")
+		for item in settings.uv_slots:
+			row = column.row(align=True)
+			row.label(text=item.name)
+			row.prop(item, "fill", text="")
+			if item.fill == "CUSTOM":
+				row.prop(item, "slot", text="")
 	if settings.swap_weights:
 		layout.row(align=True).prop(settings, "swap_weights_mode", expand=True)
 	row = layout.row()

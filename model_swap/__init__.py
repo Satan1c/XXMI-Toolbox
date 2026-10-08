@@ -4,6 +4,7 @@ from . import operators, settings
 
 classes = (
 	settings.XXMI_TOOLBOX_ObjectItem,
+	settings.XXMI_TOOLBOX_UVSlot,
 	settings.XXMI_TOOLBOX_ModelSwapSettings,
 	operators.XXMI_TOOLBOX_OT_remap_vertex_groups,
 	operators.XXMI_TOOLBOX_OT_model_swap,

@@ -1,7 +1,10 @@
+import re
+
 from bpy.types import Context, Object
 
-from ..common.transfer import joined_source, transfer
+from ..common.transfer import joined_source, transfer, transfer_uvs
 from ..common.utils import ToolError, rename_all
+from ..common.uvs import read_uvs, rebuild_uvs
 from ..vertex_groups import cleanup, remap
 from ..vertex_groups.ids import sort_vertex_groups
 from ..vertex_groups.weights import (
@@ -9,15 +12,109 @@ from ..vertex_groups.weights import (
 	limit_and_normalize,
 	unweighted_vertex_count,
 )
+from .uv_fill import UVFills
+
+_NUMBERED = re.compile(r"UV(\d*)")
 
 
-def swap_uvs(source: Object, target: Object) -> int:
+def _numbered(target: Object) -> dict[int, int] | None:
+	"""{number: index} when every UV map of the target is named UV<n>, else None.
+	Plain UV is 0; numbering from 1 counts from 1."""
+	numbers = {}
+	for index, layer in enumerate(target.data.uv_layers):
+		match = _NUMBERED.fullmatch(layer.name)
+		if match is None:
+			return None
+		numbers[int(match.group(1) or 0)] = index
+	if numbers and 0 not in numbers and min(numbers) == 1:
+		numbers = {number - 1: index for number, index in numbers.items()}
+	return numbers or None
+
+
+# Fills that make a map from the target itself, not from one of its maps or the dump's.
+_MADE = ("EMPTY", "PROJECTION", "BACKFACES")
+
+
+def _uv_plan(
+	names: list[str],
+	target: Object,
+	slots: list[int] | None,
+	modes: list[str] | None,
+	in_dump: set[str],
+) -> list[int | str | None]:
+	"""Per source map, the target map that fills it, a made fill, "DUMP", or None when nothing can."""
+	count = len(target.data.uv_layers)
+	numbered = _numbered(target)
+	plan = []
+	for k, name in enumerate(names):
+		mode = modes[k] if modes and k < len(modes) else "AUTO"
+		if mode in _MADE:
+			plan.append(mode)
+			continue
+
+		if mode == "CUSTOM":
+			index = slots[k] - 1 if slots and k < len(slots) else k
+			index = index if 0 <= index < count else None
+		elif mode == "DUMP":
+			index = None
+		elif numbered is not None:
+			index = numbered.get(k)
+		else:
+			index = k if k < count else None
+		plan.append(
+			index if index is not None else ("DUMP" if name in in_dump else None)
+		)
+	return plan
+
+
+def swap_uvs(
+	source: Object,
+	target: Object,
+	fills: UVFills,
+	slots: list[int] | None = None,
+	modes: list[str] | None = None,
+	in_dump: set[str] = frozenset(),
+) -> tuple[int, set[str]]:
+	"""Give the target the source's UV maps, each filled per its mode:
+	AUTO by the target's UV<n> names (in order when they aren't all named so), the dump filling the rest;
+	CUSTOM from the target map at its slot (1-based); DUMP from the dump;
+	EMPTY, PROJECTION and BACKFACES made by the fills.
+	Returns how many maps nothing could fill, and which are left for the dump."""
 	names = [layer.name for layer in source.data.uv_layers]
+	plan = _uv_plan(names, target, slots, modes, in_dump)
+	dumped = {name for name, step in zip(names, plan) if step == "DUMP"}
+	missing = sum(step is None for step in plan)
+
 	layers = target.data.uv_layers
-	while len(layers) > len(names):
-		layers.remove(layers[len(layers) - 1])
-	rename_all(list(layers), names[: len(layers)])
-	return len(names) - len(layers)
+	count = len(layers)
+	in_place = all(step == k for k, step in enumerate(plan[:count]))
+	if in_place and all(step is None for step in plan[count:]):
+		while len(layers) > len(names):
+			layers.remove(layers[len(layers) - 1])
+		rename_all(list(layers), names[: len(layers)])
+		return missing, dumped
+
+	# Out of order (a model whose backface UVs sit second, where the game wants them fourth), made,
+	# or left for the dump: the maps are rebuilt.
+	maps = [uv for _, uv in read_uvs(target.data)]
+	main = next(
+		(maps[i] for i, layer in enumerate(layers) if layer.active_render), None
+	)
+	made = {
+		"EMPTY": lambda name: fills.empty(target, name),
+		"PROJECTION": lambda name: fills.projection(target, name),
+		"BACKFACES": lambda name: fills.backfaces(target, name, main),
+		"DUMP": lambda name: None,
+	}
+	rebuild_uvs(
+		target.data,
+		[
+			(name, maps[step] if isinstance(step, int) else made[step](name))
+			for name, step in zip(names, plan)
+			if step is not None
+		],
+	)
+	return missing, dumped
 
 
 def swap_colors(source: Object, target: Object) -> None:
@@ -92,19 +189,29 @@ def model_swap(
 	colors: bool = True,
 	weights: bool = True,
 	keep_target_weights: bool = True,
+	uv_slots: list[int] | None = None,
+	uv_modes: list[str] | None = None,
 ) -> list[str]:
 	messages = []
+	# UV maps a target hasn't got come from the dump, so every source piece goes into it.
 	with joined_source(
-		context, sources if colors or weights else sources[:1]
+		context, sources if colors or weights or uvs else sources[:1]
 	) as joined:
 		remapped = []
 		if weights and keep_target_weights:
 			remapped = _remap_weighted(context, targets, sources, joined, messages)
 
+		in_dump = {layer.name for layer in joined.data.uv_layers}
+		fills = UVFills(sources[0], targets)
+		filled = {}
 		for target in targets:
 			try:
 				if uvs:
-					missing = swap_uvs(sources[0], target)
+					missing, dumped = swap_uvs(
+						sources[0], target, fills, uv_slots, uv_modes, in_dump
+					)
+					if dumped:
+						filled[target] = dumped
 					if missing > 0:
 						messages.append(
 							f"WARNING: {target.name} has {missing} fewer UV maps than the source"
@@ -115,4 +222,5 @@ def model_swap(
 					_swap_weights(target, joined, remapped, messages)
 			except ToolError as e:
 				messages.append(f"ERROR: {e}")
+		transfer_uvs(joined, filled)
 	return messages

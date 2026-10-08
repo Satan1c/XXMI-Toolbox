@@ -1,5 +1,5 @@
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 
 import bpy
 import numpy as np
@@ -93,3 +93,40 @@ def transfer(source: Object, target: Object, data_type: str, **mapping: str) -> 
 			layers_select_dst="NAME",
 			**mapping,
 		)
+
+
+def transfer_uvs(source: Object, targets: dict[Object, set[str]]) -> None:
+	"""Fill each target's UV maps of the given names from the source's maps of those names,
+	by the nearest source face, all targets in one go."""
+	if not targets:
+		return
+	# Data Transfer matches UV maps by name: the targets' other maps step aside meanwhile.
+	aside = [
+		(layer, layer.name)
+		for target, names in targets.items()
+		for layer in target.data.uv_layers
+		if layer.name not in names
+	]
+	for i, (layer, _) in enumerate(aside):
+		layer.name = f"XXMI_Toolbox_aside_{i}"
+	try:
+		with ExitStack() as shaped:
+			for target in targets:
+				shaped.enter_context(_as_shaped(target))
+			with bpy.context.temp_override(
+				object=source,
+				active_object=source,
+				selected_objects=[source, *targets],
+				selected_editable_objects=list(targets),
+			):
+				# One call for every target: the operator's search of the source is built once.
+				bpy.ops.object.data_transfer(
+					data_type="UV",
+					use_create=False,
+					layers_select_src="ALL",
+					layers_select_dst="NAME",
+					loop_mapping="POLYINTERP_NEAREST",
+				)
+	finally:
+		for layer, name in aside:
+			layer.name = name
