@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass
 import bpy
 
 from ..common.addon import ADDON, IS_EXTENSION
+from ..common.log import log
 from .releases import Release, latest_release
 from .version import installed_version
 
@@ -84,7 +85,14 @@ def _check() -> None:
 		STATE.checked = True
 	except (OSError, ValueError, KeyError) as e:
 		STATE.error = f"Update check failed: {getattr(e, 'reason', e)}"
-	STATE.checking = False
+		log.warning(STATE.error)
+	except Exception as e:
+		STATE.error = f"Update check failed: {e}"
+		log.exception("update check failed")
+	finally:
+		STATE.checking = False
+	if STATE.latest is not None:
+		log.info("latest release on GitHub: %s", STATE.latest.tag)
 
 
 def _redraw() -> None:

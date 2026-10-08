@@ -3,6 +3,7 @@ from pathlib import Path
 
 from bpy.types import Material
 
+from ..common.utils import ToolError
 from .export import Replacement, image_nodes
 
 # A texture's hash in a WWMI or EFMI Tools dump's file names:
@@ -16,8 +17,12 @@ _HASH = re.compile(r"[0-9a-f]{8}")
 
 def dumped_textures(source: Path) -> dict[str, str]:
 	"""{hash: file name} of the textures in the object's dump folder, as the exporter finds them."""
+	try:
+		paths = sorted(source.iterdir()) if source.is_dir() else []
+	except OSError as e:
+		raise ToolError(f"Can't read {source}: {e.strerror or e}") from e
 	found = {}
-	for path in sorted(source.iterdir()) if source.is_dir() else ():
+	for path in paths:
 		if path.suffix.lower() not in (".dds", ".jpg"):
 			continue
 		for pattern in _DUMPED:

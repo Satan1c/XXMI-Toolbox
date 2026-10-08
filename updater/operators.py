@@ -1,6 +1,6 @@
 from bpy.types import Context, Operator
 
-from ..common.utils import ToolError
+from ..common.log import report
 from . import install, state
 from .version import version_text
 
@@ -38,14 +38,12 @@ class XXMI_TOOLBOX_OT_install_update(Operator):
 
 	def execute(self, context: Context) -> set[str]:
 		release = state.STATE.latest
-		try:
-			install.install(release)
-		except ToolError as e:
-			self.report({"ERROR"}, str(e))
-			return {"CANCELLED"}
+		install.install(release)
 		state.STATE.installed = version_text(release.version)
-		self.report(
-			{"INFO"}, f"XXMI Toolbox {state.STATE.installed} installed: restart Blender"
+		report(
+			self,
+			"INFO",
+			f"XXMI Toolbox {state.STATE.installed} installed: restart Blender",
 		)
 		return {"FINISHED"}
 

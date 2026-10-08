@@ -5,6 +5,7 @@ import tempfile
 import zipfile
 
 from ..common.addon import ADDON_DIR, IS_EXTENSION
+from ..common.log import log
 from ..common.utils import ToolError
 from .releases import Release, download
 from .version import asset_name, parse_version
@@ -82,6 +83,7 @@ def install(release: Release) -> None:
 	folder = tempfile.mkdtemp(prefix="xxmi_toolbox_update_")
 	try:
 		path = os.path.join(folder, asset_name(release.version))
+		log.info("downloading %s", release.download_url)
 		try:
 			download(release.download_url, path)
 		except OSError as e:
@@ -91,5 +93,6 @@ def install(release: Release) -> None:
 		except zipfile.BadZipFile as e:
 			raise ToolError(f"{asset_name(release.version)} is damaged") from e
 		_swap()
+		log.info("installed %s into %s", release.tag, ADDON_DIR)
 	finally:
 		shutil.rmtree(folder, ignore_errors=True)

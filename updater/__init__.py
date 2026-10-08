@@ -2,6 +2,7 @@ import time
 
 import bpy
 
+from ..common.log import guard_operators
 from ..preferences import preferences
 from . import install, operators, state
 
@@ -24,6 +25,7 @@ def _auto_check() -> None:
 
 
 def register() -> None:
+	guard_operators(classes)
 	for cls in classes:
 		bpy.utils.register_class(cls)
 	install.remove_leftovers()

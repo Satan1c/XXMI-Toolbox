@@ -5,7 +5,8 @@ from contextlib import contextmanager
 import bpy
 from bpy.types import ID, Collection, Context, Object
 
-from .utils import ToolError
+from .log import log
+from .utils import ToolError, blender_error
 
 GAME_ARMATURE_KEY = "XXMI_Toolbox:GameArmature"
 
@@ -68,6 +69,8 @@ def write_objects(
 			bpy.data.libraries.write(
 				filepath, {created[0][0]}, path_remap="ABSOLUTE", fake_user=True
 			)
+	except (OSError, RuntimeError) as e:
+		raise ToolError(f"Can't save {filepath}: {blender_error(e)}") from e
 	finally:
 		for new, _ in reversed(created):
 			bpy.data.collections.remove(new)
@@ -76,8 +79,13 @@ def write_objects(
 def _link_saved(context: Context, filepath: str) -> list[Object]:
 	"""Link a saved file's collections into the scene, nested ones staying under their parents.
 	Returns their objects."""
-	with bpy.data.libraries.load(filepath) as (source, loaded):
-		loaded.collections = source.collections
+	try:
+		with bpy.data.libraries.load(filepath) as (source, loaded):
+			loaded.collections = source.collections
+	except (OSError, RuntimeError) as e:
+		raise ToolError(
+			f"Can't read {os.path.basename(filepath)}: {blender_error(e)}"
+		) from e
 	collections = [c for c in loaded.collections if c is not None]
 	if not collections:
 		raise ToolError(f"{os.path.basename(filepath)} has nothing saved in it")
@@ -89,6 +97,12 @@ def _link_saved(context: Context, filepath: str) -> list[Object]:
 		if collection not in nested:
 			context.scene.collection.children.link(collection)
 		objects += [obj for obj in collection.all_objects if obj not in objects]
+	log.info(
+		"added %s from %s: %d objects",
+		", ".join(c.name for c in collections if c not in nested),
+		filepath,
+		len(objects),
+	)
 	return objects
 
 

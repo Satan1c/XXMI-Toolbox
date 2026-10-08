@@ -8,8 +8,9 @@ from bpy.props import (
 )
 from bpy.types import Context, Event, Object, Operator, PropertyGroup
 
+from ..common.log import report
 from ..common.operators import PerMeshOperator
-from ..common.utils import ToolError, object_mode, selected_meshes
+from ..common.utils import object_mode, selected_meshes
 from . import colors, sculpt, separate, shape_keys, uv
 
 
@@ -116,16 +117,12 @@ class XXMI_TOOLBOX_OT_apply_modifiers_with_shape_keys(Operator):
 	def execute(self, context: Context) -> set[str]:
 		names = [item.name for item in self.modifiers if item.apply]
 		if not names:
-			self.report({"ERROR"}, "No modifier chosen")
+			report(self, "ERROR", "No modifier chosen")
 			return {"CANCELLED"}
 		with object_mode(context):
-			try:
-				shape_keys.apply_modifiers_with_shape_keys(
-					context, context.active_object, names
-				)
-			except ToolError as e:
-				self.report({"ERROR"}, str(e))
-				return {"CANCELLED"}
+			shape_keys.apply_modifiers_with_shape_keys(
+				context, context.active_object, names
+			)
 		return {"FINISHED"}
 
 
@@ -146,7 +143,7 @@ class XXMI_TOOLBOX_OT_name_shape_keys_for_export(Operator):
 	def execute(self, context: Context) -> set[str]:
 		with object_mode(context):
 			count = shape_keys.name_for_export(selected_meshes(context))
-		self.report({"INFO"}, f"Renamed {count} shape keys to Custom <n>")
+		report(self, "INFO", f"Renamed {count} shape keys to Custom <n>")
 		return {"FINISHED"}
 
 
@@ -162,11 +159,7 @@ class XXMI_TOOLBOX_OT_create_merged_object(Operator):
 
 	def execute(self, context: Context) -> set[str]:
 		with object_mode(context):
-			try:
-				sculpt.create_merged_object(context, selected_meshes(context))
-			except ToolError as e:
-				self.report({"ERROR"}, str(e))
-				return {"CANCELLED"}
+			sculpt.create_merged_object(context, selected_meshes(context))
 		return {"FINISHED"}
 
 
@@ -203,11 +196,8 @@ class XXMI_TOOLBOX_OT_apply_merged_sculpt(Operator):
 			bpy.ops.object.mode_set(mode="OBJECT")
 		try:
 			count = sculpt.apply_merged_sculpt(merged, self.shape_keys)
-		except ToolError as e:
-			self.report({"ERROR"}, str(e))
-			return {"CANCELLED"}
 		finally:
 			if was_sculpt:
 				bpy.ops.object.mode_set(mode="SCULPT")
-		self.report({"INFO"}, f"Applied sculpt to {count} meshes")
+		report(self, "INFO", f"Applied sculpt to {count} meshes")
 		return {"FINISHED"}

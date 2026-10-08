@@ -2,6 +2,7 @@ import re
 
 from bpy.types import Context, Object
 
+from ..common.log import log
 from ..common.transfer import joined_source, transfer, transfer_uvs
 from ..common.utils import ToolError, rename_all
 from ..common.uvs import read_uvs, rebuild_uvs
@@ -82,6 +83,7 @@ def swap_uvs(
 	Returns how many maps nothing could fill, and which are left for the dump."""
 	names = [layer.name for layer in source.data.uv_layers]
 	plan = _uv_plan(names, target, slots, modes, in_dump)
+	log.debug("%s: UV maps %s", target.name, dict(zip(names, plan)))
 	dumped = {name for name, step in zip(names, plan) if step == "DUMP"}
 	missing = sum(step is None for step in plan)
 
@@ -172,6 +174,7 @@ def _swap_weights(
 	target: Object, joined: Object, remapped: list[Object], messages: list[str]
 ) -> None:
 	if target not in remapped:
+		log.debug("%s: weights copied from the nearest source surface", target.name)
 		target.vertex_groups.clear()
 		transfer(joined, target, "VGROUP_WEIGHTS", vert_mapping="POLYINTERP_NEAREST")
 	_cleanup_weights(target)

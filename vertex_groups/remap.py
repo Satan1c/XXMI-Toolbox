@@ -4,6 +4,7 @@ import bpy
 import numpy as np
 from bpy.types import Context, Mesh, Object
 
+from ..common.log import log
 from ..common.transfer import joined_source, transfer
 from ..common.utils import ToolError, rename_all
 from .weights import is_weighted, read_weights
@@ -160,6 +161,8 @@ def remap(
 	}
 	if choose is not None:
 		plan.update(choose(totals, source_names))
+	for name, (match, share) in sorted(plan.items()):
+		log.debug("remap %s -> %s (%.0f%%)", name, match, share * 100)
 
 	renamed = 0
 	for target in targets:

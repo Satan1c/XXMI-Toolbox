@@ -11,6 +11,12 @@ class ToolError(Exception):
 	pass
 
 
+def blender_error(error: Exception) -> str:
+	"""An error's message without the "Error: " Blender puts before its own."""
+	text = str(error).strip()
+	return text[len("Error: ") :] if text.startswith("Error: ") else text
+
+
 def selected_meshes(context: Context) -> list[Object]:
 	objects = list(context.selected_objects)
 	active = context.active_object

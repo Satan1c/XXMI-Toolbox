@@ -5,6 +5,7 @@ from pathlib import Path
 
 from bpy.types import Image, Material, Node, NodeSocket
 
+from ..common.log import log
 from ..common.utils import ToolError
 from .export import Replacement, image_nodes
 
@@ -78,12 +79,16 @@ def slot_images(material: Material, slots: list[str]) -> dict[str, Image]:
 		slot = _named_slot(node, slots)
 		if slot is not None:
 			found.setdefault(slot, node.image)
+			log.debug("%s: %s named as the %s", material.name, node.image.name, slot)
 
 	for slot, test in (("Diffuse", _is_diffuse), ("NormalMap", _is_normal)):
 		if slot in slots and slot not in found:
 			node = next((n for n in nodes if _feeds(n, test)), None)
 			if node is not None:
 				found[slot] = node.image
+				log.debug(
+					"%s: %s wired as the %s", material.name, node.image.name, slot
+				)
 	return found
 
 

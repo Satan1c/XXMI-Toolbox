@@ -1,7 +1,6 @@
-import bpy
-
+from ..common.operators import register_classes_factory
 from . import operators
 
 classes = (operators.XXMI_TOOLBOX_OT_export_material_textures,)
 
-register, unregister = bpy.utils.register_classes_factory(classes)
+register, unregister = register_classes_factory(classes)

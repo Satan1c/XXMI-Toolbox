@@ -7,6 +7,7 @@ from bpy.types import ArmatureEditBones, Context, Object
 from mathutils import Matrix, Vector
 
 from ..common.library import GAME_ARMATURE_KEY
+from ..common.log import log
 from ..common.transfer import joined_source
 from ..common.utils import ToolError, follow, world_positions
 from ..vertex_groups.ids import vg_id
@@ -95,6 +96,11 @@ def _shift(game: list[Object], dumped: list[Object]) -> Vector | None:
 	median = np.median(shifts, 0)
 	# Most pairs must agree: one coincidental match in size says nothing.
 	agree = np.linalg.norm(shifts - median, axis=1) < tolerance
+	log.debug(
+		"%d of %d same-size mesh pairs agree on the dump's offset",
+		agree.sum(),
+		len(shifts),
+	)
 	if agree.sum() * 2 <= len(shifts) or np.linalg.norm(median) < tolerance:
 		return None
 	return Vector(shifts[agree].mean(0))
@@ -132,6 +138,9 @@ def _align(
 
 	as_is = offset(game_centres)
 	mirrored = float("inf") if settled else offset(game_centres * (-1.0, 1.0, 1.0))
+	log.debug(
+		"group centres off the game model's: %.4f as is, %.4f mirrored", as_is, mirrored
+	)
 	if min(as_is, mirrored) > MAX_OFFSET:
 		raise ToolError(
 			f"The game model doesn't line up with the dumped meshes: put {rig.name} where they are, "
@@ -318,6 +327,12 @@ def _attach_saved(rig: Object, dumped: list[Object], spaces: list[Space]) -> lis
 			vg_id(name): Vector(centre) for name, centre in group_centres(obj).items()
 		}
 		space = _saved_space(centres, recorded, tolerance)
+		log.debug(
+			"%s: %d groups, on %s",
+			obj.name,
+			len(centres),
+			space and space.armature.name,
+		)
 		if space is None:
 			unmatched.append(obj.name)
 			continue
@@ -384,6 +399,12 @@ def attach(context: Context, rig: Object, dumped: list[Object]) -> list[str]:
 		for group_id, bone in maps[obj].items():
 			space.bones.setdefault(group_id, bone)
 		space.meshes.append(obj)
+		log.debug(
+			"%s: %d IDs on game bones, sharing space %d",
+			obj.name,
+			len(maps[obj]),
+			spaces.index(space),
+		)
 
 	for space in spaces:
 		if not space.meshes:

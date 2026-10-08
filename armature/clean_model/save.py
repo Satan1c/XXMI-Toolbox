@@ -2,6 +2,7 @@ import bpy
 from bpy.types import Context, Object
 
 from ...common.library import write_objects
+from ...common.log import log, timed
 from ...common.utils import ToolError, armature_modifier
 from .bake import baked_meshes
 from .keys import add_shape_keys
@@ -80,28 +81,42 @@ def save_clean_model(
 	parts, left_out = rig_parts(meshes, rig)
 	part_of = {part.rig: part for part in parts}
 	meshes = [obj for obj in meshes if obj.find_armature() in part_of]
+	log.info(
+		"saving %d meshes of %s to %s",
+		len(meshes),
+		", ".join(p.rig.name for p in parts),
+		filepath,
+	)
 
-	baked, skipped = baked_meshes(context, meshes)
+	with timed("baking"):
+		baked, skipped = baked_meshes(context, meshes)
 	copies = {
 		obj: bpy.data.objects.new(obj.name, mesh) for obj, (mesh, _) in baked.items()
 	}
-	dropped_uvs = sum(
-		tidy_uvs(mesh, drop_empty_uvs, rename_uvs) for mesh, _ in baked.values()
-	)
+	dropped_uvs = 0
+	for obj, (mesh, _) in baked.items():
+		dropped = tidy_uvs(mesh, drop_empty_uvs, rename_uvs)
+		if dropped:
+			log.debug(
+				"%s: %d UV maps barely cover any faces, dropped", obj.name, dropped
+			)
+		dropped_uvs += dropped
 
 	skeleton, materials = None, DetachedMaterials()
 	try:
 		for obj, copy in copies.items():
 			keep_own_groups(copy, part_of[obj.find_armature()])
-		moved, shared = influence(list(copies.values()))
-		skeleton = deform_skeleton(context, parts, moved, shared)
+		with timed("building the skeleton"):
+			moved, shared = influence(list(copies.values()))
+			skeleton = deform_skeleton(context, parts, moved, shared)
 		bone_count = len(skeleton.data.bones)
 
 		for obj, copy in copies.items():
 			_rig_copy(copy, obj, skeleton)
 			add_shape_keys(copy, obj, baked[obj][1])
 			materials.swap(copy)
-		_write(filepath, rig, skeleton, copies, materials)
+		with timed("writing"):
+			_write(filepath, rig, skeleton, copies, materials)
 	finally:
 		_remove(list(copies.values()), skeleton)
 		materials.remove()

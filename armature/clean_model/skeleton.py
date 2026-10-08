@@ -7,6 +7,7 @@ from bpy.types import ArmatureEditBones, Bone, Context, Object
 from mathutils import Vector
 from mathutils.geometry import intersect_point_line
 
+from ...common.log import log
 from ...common.utils import positions
 from ...vertex_groups.weights import read_weights
 from ..attach import editing
@@ -99,6 +100,9 @@ def _kept(part: Part) -> set[str]:
 		]
 		if min(near) > size * _NODE_GAP:
 			kept.discard(name)
+			log.debug(
+				"%s: %s moves nothing and sits apart, left out", part.rig.name, name
+			)
 	return kept
 
 
@@ -171,6 +175,7 @@ class _Orphans:
 			)
 			if gap < self.joint_gap:
 				joints[name].parent = parent
+				log.debug("%s hangs from %s, ending where it starts", name, parent)
 
 		orphans = [name for name in orphans if joints[name].parent is None]
 		if len(orphans) < 2:
@@ -179,6 +184,11 @@ class _Orphans:
 		for name in orphans:
 			if name != root:
 				joints[name].parent = self._joined(name)
+				log.debug(
+					"%s hangs from %s, by shared weight or nearness",
+					name,
+					joints[name].parent,
+				)
 
 	def _joined(self, name: str) -> str | None:
 		# Where a bone blends into another is where it joins it: a tail into the hips, not the skirt beside it.

@@ -1,5 +1,6 @@
 import bpy
 
+from ..common.log import guard_operators
 from . import operators, settings, ui
 
 classes = (
@@ -13,6 +14,7 @@ classes = (
 
 
 def register():
+	guard_operators(classes)
 	for cls in classes:
 		bpy.utils.register_class(cls)
 	for menu in ui.MENUS:

@@ -5,6 +5,7 @@ import bpy
 from bpy.types import Context, EditBone, Object
 from mathutils import Matrix, Vector
 
+from ..common.log import log
 from ..common.utils import (
 	ToolError,
 	armature_modifier,
@@ -412,6 +413,8 @@ def clean_up(
 			for name in unused:
 				edit_bones.remove(edit_bones[name])
 	removed_objects = len(doomed)
+	log.debug("removing objects: %s", ", ".join(sorted(obj.name for obj in doomed)))
+	log.debug("removing bones: %s", ", ".join(unused))
 	removed_collections = _remove_objects(doomed)
 	# Kept for the transform they give the armature; hiding a parent leaves its children shown.
 	for obj in ancestors:

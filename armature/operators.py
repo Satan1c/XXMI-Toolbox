@@ -6,6 +6,7 @@ from bpy.types import Context, Event, Object, Operator
 from bpy_extras.io_utils import ExportHelper, ImportHelper
 
 from ..common.library import add_saved
+from ..common.log import report
 from ..common.utils import ToolError, object_mode, selected_meshes
 from . import attach, clean_model, cleanup, save
 from .settings import CONNECT_DESCRIPTION, GATHER_DESCRIPTION
@@ -39,17 +40,13 @@ class XXMI_TOOLBOX_OT_attach_to_game_armature(Operator):
 		return game_armature(context) is not None and bool(selected_meshes(context))
 
 	def execute(self, context: Context) -> set[str]:
-		try:
-			with object_mode(context):
-				lines = attach.attach(
-					context, game_armature(context), selected_meshes(context)
-				)
-		except ToolError as e:
-			self.report({"ERROR"}, str(e))
-			return {"CANCELLED"}
+		with object_mode(context):
+			lines = attach.attach(
+				context, game_armature(context), selected_meshes(context)
+			)
 		for line in lines[1:]:
-			self.report({"WARNING"}, line)
-		self.report({"INFO"}, lines[0])
+			report(self, "WARNING", line)
+		report(self, "INFO", lines[0])
 		return {"FINISHED"}
 
 
@@ -75,18 +72,14 @@ class XXMI_TOOLBOX_OT_clean_up_game_model(Operator):
 		return rig is not None and bool(attach.existing_spaces(context, rig))
 
 	def execute(self, context: Context) -> set[str]:
-		try:
-			with object_mode(context):
-				line = cleanup.clean_up(
-					context,
-					game_armature(context),
-					self.gather_ids,
-					self.connect_bones,
-				)
-		except ToolError as e:
-			self.report({"ERROR"}, str(e))
-			return {"CANCELLED"}
-		self.report({"INFO"}, line)
+		with object_mode(context):
+			line = cleanup.clean_up(
+				context,
+				game_armature(context),
+				self.gather_ids,
+				self.connect_bones,
+			)
+		report(self, "INFO", line)
 		return {"FINISHED"}
 
 
@@ -112,16 +105,13 @@ class _SaveBlend(ExportHelper):
 	def execute(self, context: Context) -> set[str]:
 		this_file = bpy.data.filepath
 		if this_file and os.path.abspath(self.filepath) == os.path.abspath(this_file):
-			self.report(
-				{"ERROR"}, f"Save the {self.saved} to another file than this one"
-			)
-			return {"CANCELLED"}
-		try:
-			line = self.save(context)
-		except ToolError as e:
-			self.report({"ERROR"}, str(e))
-			return {"CANCELLED"}
-		self.report({"INFO"}, line)
+			raise ToolError(f"Save the {self.saved} to another file than this one")
+		folder = os.path.dirname(os.path.abspath(bpy.path.abspath(self.filepath)))
+		if not os.path.isdir(folder):
+			raise ToolError(f"{folder} doesn't exist")
+
+		line = self.save(context)
+		report(self, "INFO", line)
 		return {"FINISHED"}
 
 
@@ -198,14 +188,11 @@ class XXMI_TOOLBOX_OT_add_saved(Operator, ImportHelper):
 	filter_glob: StringProperty(default="*.blend", options={"HIDDEN"})  # type: ignore
 
 	def execute(self, context: Context) -> set[str]:
-		try:
-			with object_mode(context):
-				objects = add_saved(context, self.filepath)
-		except ToolError as e:
-			self.report({"ERROR"}, str(e))
-			return {"CANCELLED"}
-		self.report(
-			{"INFO"},
+		with object_mode(context):
+			objects = add_saved(context, self.filepath)
+		report(
+			self,
+			"INFO",
 			f"Added {len(objects)} objects from {os.path.basename(self.filepath)}",
 		)
 		return {"FINISHED"}

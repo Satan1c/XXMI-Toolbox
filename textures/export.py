@@ -6,6 +6,7 @@ import bpy
 import numpy as np
 from bpy.types import Context, Image, Material, Node
 
+from ..common.log import log
 from .dds import is_srgb, write_dds
 
 # Color spaces whose float pixels are data, not colors to encode as sRGB.
@@ -87,7 +88,18 @@ def write_replacements(
 
 		srgb = is_srgb(replacement.source)
 		srgb = replacement.srgb if srgb is None else srgb
-		replacement.target.parent.mkdir(parents=True, exist_ok=True)
-		write_dds(replacement.target, _pixels(image, srgb), srgb)
+		try:
+			replacement.target.parent.mkdir(parents=True, exist_ok=True)
+			write_dds(replacement.target, _pixels(image, srgb), srgb)
+		except OSError as e:
+			failed.append(f"{name} ({e.strerror or e})")
+			continue
+		log.info(
+			"wrote %s from %s, %dx%d, %s",
+			replacement.target,
+			image.name,
+			*image.size,
+			"sRGB" if srgb else "linear",
+		)
 		written.append(name)
 	return written, kept, failed

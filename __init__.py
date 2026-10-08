@@ -1,5 +1,4 @@
 import os
-import traceback
 
 import bpy
 
@@ -14,6 +13,7 @@ from . import (
 	updater,
 	vertex_groups,
 )
+from .common.log import log, start_logging, stop_logging
 
 # Read only by Blender 3.6 for the legacy add-on build; 4.2+ uses blender_manifest.toml.
 bl_info = {
@@ -45,8 +45,7 @@ if os.path.isdir(os.path.join(os.path.dirname(__file__), "experimental")):
 	try:
 		from . import experimental as _experimental
 	except Exception:
-		print("XXMI Toolbox: experimental tools failed to load")
-		traceback.print_exc()
+		log.exception("experimental tools failed to load")
 _registered = False
 _experimental_registered = False
 
@@ -59,10 +58,19 @@ def register():
 			"XXMI Toolbox: legacy add-on ignored on Blender 4.2+, install the extension instead"
 		)
 		return
+	start_logging(False)
 	for module in _modules:
 		module.register()
 	_registered = True
+	start_logging(_detailed_log())
 	_register_experimental()
+
+
+def _detailed_log() -> bool:
+	try:
+		return preferences.preferences(bpy.context).detailed_log
+	except KeyError:
+		return False  # Loaded without an add-on entry, as the tests do.
 
 
 def _register_experimental():
@@ -73,8 +81,7 @@ def _register_experimental():
 		_experimental.register()
 		_experimental_registered = True
 	except Exception:
-		print("XXMI Toolbox: experimental tools failed to register")
-		traceback.print_exc()
+		log.exception("experimental tools failed to register")
 
 
 def unregister():
@@ -87,3 +94,4 @@ def unregister():
 	for module in reversed(_modules):
 		module.unregister()
 	_registered = False
+	stop_logging()

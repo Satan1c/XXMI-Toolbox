@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import numpy as np
 from bpy.types import Context, Key, Mesh, Object
 
+from ...common.log import log
 from ...common.utils import positions, transformed
 from ...vertex_groups.weights import read_weights
 
@@ -157,7 +158,15 @@ def bake_keyed(
 			mesh = bake()
 		shaped = _mapped_keys(obj, keys, mesh)
 		if shaped is None:
+			# One evaluation per key: slow on meshes with hundreds of them.
+			log.info(
+				"%s: a modifier loses where vertices came from, baking its keys one by one",
+				obj.name,
+			)
 			shaped, skipped = _evaluated_keys(context, obj, keys, mesh)
+		log.debug(
+			"%s: %d shape keys baked, %d left out", obj.name, len(shaped), len(skipped)
+		)
 		if _INDEX in mesh.attributes:
 			mesh.attributes.remove(mesh.attributes[_INDEX])
 

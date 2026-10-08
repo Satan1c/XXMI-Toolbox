@@ -3,6 +3,7 @@ from collections.abc import Callable, Iterable
 from bpy.props import EnumProperty, IntProperty
 from bpy.types import Context, Object, Operator, bpy_prop_collection
 
+from ..common.log import report
 from ..common.utils import ToolError, object_mode
 from ..vertex_groups import remap
 from . import custom_properties, swap
@@ -74,24 +75,20 @@ class XXMI_TOOLBOX_OT_remap_vertex_groups(_SwapOperator, Operator):
 	)
 
 	def execute(self, context: Context) -> set[str]:
-		try:
-			_, sources, targets = _swap_objects(context)
-			with object_mode(context):
-				renamed, least_certain = remap.remap(
-					context,
-					targets,
-					sources,
-					choose=_remap_choose(context, sources),
-				)
-		except ToolError as e:
-			self.report({"ERROR"}, str(e))
-			return {"CANCELLED"}
+		_, sources, targets = _swap_objects(context)
+		with object_mode(context):
+			renamed, least_certain = remap.remap(
+				context,
+				targets,
+				sources,
+				choose=_remap_choose(context, sources),
+			)
 		message = f"Remapped {renamed} vertex groups"
 		if least_certain:
 			message += "; least certain: " + ", ".join(
 				f"{a} -> {b} ({share:.0%})" for share, a, b in least_certain
 			)
-		self.report({"INFO"}, message)
+		report(self, "INFO", message)
 		return {"FINISHED"}
 
 
@@ -104,11 +101,7 @@ class XXMI_TOOLBOX_OT_model_swap(_SwapOperator, Operator):
 	)
 
 	def execute(self, context: Context) -> set[str]:
-		try:
-			settings, sources, targets = _swap_objects(context)
-		except ToolError as e:
-			self.report({"ERROR"}, str(e))
-			return {"CANCELLED"}
+		settings, sources, targets = _swap_objects(context)
 		with object_mode(context):
 			try:
 				sync_uv_slots(settings)
@@ -125,12 +118,12 @@ class XXMI_TOOLBOX_OT_model_swap(_SwapOperator, Operator):
 					remap_choose=_remap_choose(context, sources),
 				)
 			except ToolError as e:
-				self.report({"ERROR"}, str(e))
+				report(self, "ERROR", str(e))
 				return {"FINISHED"}
 		for message in messages:
 			level = message.split(":", 1)[0]
 			self.report({level} if level in ("WARNING", "ERROR") else {"INFO"}, message)
-		self.report({"INFO"}, f"Model Swap applied to {len(targets)} meshes")
+		report(self, "INFO", f"Model Swap applied to {len(targets)} meshes")
 		return {"FINISHED"}
 
 
@@ -149,15 +142,12 @@ class XXMI_TOOLBOX_OT_copy_custom_properties(Operator):
 		return bool(_meshes(settings.targets))
 
 	def execute(self, context: Context) -> set[str]:
-		try:
-			_, sources, targets = _swap_objects(context)
-		except ToolError as e:
-			self.report({"ERROR"}, str(e))
-			return {"CANCELLED"}
+		_, sources, targets = _swap_objects(context)
 		for target in targets:
 			custom_properties.replace_custom_properties(sources[0], target)
-		self.report(
-			{"INFO"},
+		report(
+			self,
+			"INFO",
 			f"Copied custom properties from {sources[0].name} to {len(targets)} meshes",
 		)
 		return {"FINISHED"}

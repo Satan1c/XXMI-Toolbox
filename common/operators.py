@@ -1,13 +1,25 @@
+from collections.abc import Callable
+
+import bpy
 from bpy.types import Context, Object, Operator
 
+from .log import guard_operators, report
 from .utils import ToolError, object_mode, selected_meshes
+
+
+def register_classes_factory(
+	classes: tuple[type, ...],
+) -> tuple[Callable[[], None], Callable[[], None]]:
+	"""Blender's, with the operators' errors reported instead of raised."""
+	guard_operators(classes)
+	return bpy.utils.register_classes_factory(classes)
 
 
 def report_results(operator: Operator, done: str, errors: list[str]) -> None:
 	for error in errors:
-		operator.report({"ERROR"}, error)
+		report(operator, "ERROR", error)
 	if done and not errors:
-		operator.report({"INFO"}, done)
+		report(operator, "INFO", done)
 
 
 class PerMeshOperator:

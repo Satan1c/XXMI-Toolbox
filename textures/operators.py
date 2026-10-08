@@ -1,5 +1,6 @@
 from bpy.types import Context, Operator
 
+from ..common.log import report
 from ..common.utils import ToolError
 from .export import scene_materials, write_replacements
 from .hashes import hash_replacements
@@ -48,27 +49,23 @@ class XXMI_TOOLBOX_OT_export_material_textures(Operator):
 		return any_host(context)
 
 	def execute(self, context: Context) -> set[str]:
-		try:
-			hosts = mod_folders(context)
-			if not hosts:
-				raise ToolError(
-					"Set XXMI Tools' Dump Folder, or WWMI or EFMI Tools' object sources and mod folder"
-				)
-			written, notes = [], []
-			for folders in hosts:
-				host_written, host_notes = _export(context, folders)
-				written += [f"{folders.textures / name}" for name in host_written]
-				notes += host_notes
-		except ToolError as e:
-			self.report({"ERROR"}, str(e))
-			return {"CANCELLED"}
+		hosts = mod_folders(context)
+		if not hosts:
+			raise ToolError(
+				"Set XXMI Tools' Dump Folder, or WWMI or EFMI Tools' object sources and mod folder"
+			)
+		written, notes = [], []
+		for folders in hosts:
+			host_written, host_notes = _export(context, folders)
+			written += [f"{folders.textures / name}" for name in host_written]
+			notes += host_notes
 
 		if not written and not notes:
-			self.report(
-				{"ERROR"}, "No material image replaces one of the dump's textures"
+			report(
+				self, "ERROR", "No material image replaces one of the dump's textures"
 			)
 			return {"CANCELLED"}
 		for note in notes:
-			self.report({"WARNING"}, note)
-		self.report({"INFO"}, f"Wrote {len(written)} textures: " + ", ".join(written))
+			report(self, "WARNING", note)
+		report(self, "INFO", f"Wrote {len(written)} textures: " + ", ".join(written))
 		return {"FINISHED"}

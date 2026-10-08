@@ -6,6 +6,7 @@ from bpy.types import Mesh, Object
 from mathutils import Vector
 from mathutils.bvhtree import BVHTree
 
+from ..common.log import log
 from ..common.utils import world_positions
 
 # Rays cast from behind a face to see whether its back can be seen: straight back and tilted this far all round.
@@ -84,7 +85,9 @@ class UVFills:
 		totals = np.empty(len(mesh.polygons), dtype=np.int32)
 		mesh.polygons.foreach_get("loop_start", starts)
 		mesh.polygons.foreach_get("loop_total", totals)
-		corners = np.repeat(inside_shows(target), totals)
+		shows = inside_shows(target)
+		log.debug("%s: inside seen on %.0f%% of faces", target.name, shows.mean() * 100)
+		corners = np.repeat(shows, totals)
 		order = np.concatenate([np.arange(s, s + t) for s, t in zip(starts, totals)])
 		uv[order[corners]] = main[order[corners]]
 		return uv
@@ -95,7 +98,9 @@ class UVFills:
 		co = np.concatenate([world_positions(obj) for obj in self.targets])
 		height = float(co[:, 2].max() - co[:, 2].min()) or 1.0
 		half_width = float(np.abs(co[:, 0]).max()) or 1.0
-		return min(1.0 / height, 0.5 / half_width), float(co[:, 2].min())
+		scale, floor = min(1.0 / height, 0.5 / half_width), float(co[:, 2].min())
+		log.debug("projection: %.4f per unit, from %.4f up", scale, floor)
+		return scale, floor
 
 	def _to_blender(self, uv: np.ndarray, name: str) -> np.ndarray:
 		if self._flipped(name):

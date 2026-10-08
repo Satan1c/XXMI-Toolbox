@@ -1,5 +1,4 @@
-import bpy
-
+from ..common.operators import register_classes_factory
 from . import operators, settings
 
 classes = (
@@ -14,4 +13,4 @@ classes = (
 	operators.XXMI_TOOLBOX_OT_list_clear,
 )
 
-register, unregister = bpy.utils.register_classes_factory(classes)
+register, unregister = register_classes_factory(classes)
