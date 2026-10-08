@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "xxmi_toolbox"
-version = "1.0.0"
+version = "1.1.0"
 name = "XXMI Toolbox"
 tagline = "Shared mesh and vertex group tools for XXMI modding add-ons"
 maintainer = "Satan1c"
