@@ -1,10 +1,11 @@
 import os
 
 import bpy
-from bpy.props import BoolProperty
+from bpy.props import BoolProperty, StringProperty
 from bpy.types import Context, Event, Object, Operator
-from bpy_extras.io_utils import ExportHelper
+from bpy_extras.io_utils import ExportHelper, ImportHelper
 
+from ..common.library import add_saved
 from ..common.utils import ToolError, object_mode, selected_meshes
 from . import attach, cleanup, save
 from .settings import CONNECT_DESCRIPTION, GATHER_DESCRIPTION
@@ -143,3 +144,25 @@ class XXMI_TOOLBOX_OT_save_game_armature(_SaveBlend, Operator):
 
 	def save(self, context: Context) -> str:
 		return save.save(context, game_armature(context), self.filepath)
+
+
+class XXMI_TOOLBOX_OT_add_saved(Operator, ImportHelper):
+	bl_idname = "xxmi_toolbox.add_saved"
+	bl_label = "Add Saved"
+	bl_description = "Add a game armature saved with Save Game Armature to this scene"
+	bl_options = {"REGISTER", "UNDO"}
+	filename_ext = ".blend"
+	filter_glob: StringProperty(default="*.blend", options={"HIDDEN"})  # type: ignore
+
+	def execute(self, context: Context) -> set[str]:
+		try:
+			with object_mode(context):
+				objects = add_saved(context, self.filepath)
+		except ToolError as e:
+			self.report({"ERROR"}, str(e))
+			return {"CANCELLED"}
+		self.report(
+			{"INFO"},
+			f"Added {len(objects)} objects from {os.path.basename(self.filepath)}",
+		)
+		return {"FINISHED"}
