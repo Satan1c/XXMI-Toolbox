@@ -21,6 +21,7 @@ sidebar) and to **Ctrl+G** in Edit Mode.
   suffix. Modes: same ID, into active, list, range. A labelled name (`0.head`) is kept over a bare ID (`0`).
 - **Fill Gaps**: adds missing IDs so the list runs `0..N`, and prefixes name-only groups with their position (`hair` at
   position 2 becomes `2.hair`). IDs above 1023 are refused.
+- **Fill Missing Weights**: gives every vertex without weights those of the nearest weighted vertex of the same mesh.
 - **Remove Unused** / **Remove All**.
 
 **Mesh**
@@ -28,6 +29,13 @@ sidebar) and to **Ctrl+G** in Edit Mode.
 - Separate by Material (parts named after their material), Clean UV Names (`TEXCOORD.xy`, `TEXCOORD1.xy`, …), Reset
   Vertex Colors, Convert Vertex Colors to Float (keeps stored values).
 - Apply Modifiers with Shape Keys.
+- **Name Shape Keys for Export**: renames the shape keys the exporters wouldn't take to `Custom <n>`, one number per
+  name across the selection; the game's own `Deform <n>` keys stay.
+- **Export Material Textures**: writes material images into the mod as the textures they replace, where the exporter
+  keeps files already there. XXMI Tools: materials named after the dump's parts (`NangongYuRapsodyBodyA`), each image
+  filling the slot its node or image is named after (`Diffuse`, `NormalMap`, `LightMap`, `MaterialMap`), else the one
+  feeding Base Color as the Diffuse and one through a Normal Map node as the NormalMap. WWMI and EFMI Tools: any image
+  whose node or image name holds a dumped texture's hash. Written as uncompressed `.dds`, sRGB where the dump's is.
 - Merged-object sculpt: Create Merged Object, then Apply Sculpt or Apply Sculpt + Shape Keys (also moves every shape key
   by the sculpted offset). Also applies merged objects made by WWMI/EFMI Tools.
 
@@ -35,8 +43,14 @@ sidebar) and to **Ctrl+G** in Edit Mode.
 applied) with **Add Selected**. Meshes must be aligned in world space. Every target is processed in one click; several
 source meshes are used together as one.
 
-- **UV Names**: target UV maps renamed in order to the first source's names, extra ones removed.
+- **UV Names**: target UV maps take the first source's names; each map's fill can be chosen:
+  - **Auto**: by the target's `UV<n>` names (in order when they aren't all named so), the dump filling what it hasn't got.
+  - **Custom UV**: one of the target's own maps.
+  - **From Dump**: the dump's map, each corner from the nearest dump face (the game's outline or decal maps).
+  - **Empty**: zeros. **Projection**: straight from the front at one scale for every target, as tall as the map.
+    **Backfaces**: the main map where a mesh's inside can be seen, zeros elsewhere.
 - **Colors**: color attributes overwritten from the sources with their names, domain and type; extra ones removed.
+  Weights and colors are sampled on each target as its shape keys shape it.
 - **VGs**: for weighted targets, **Keep Weights** renames each target group after the source group it overlaps most
   (judged by the source weights on the nearest source surface, across all sources and all targets together, so every
   piece gets the same name for the same bone); **Copy Weights** replaces their weights with the source ones. Unweighted
@@ -59,8 +73,20 @@ character is split.
   lacks.
 - **Clean Up Game Model**: once every piece is attached, deletes what came with the game model that nothing uses: its
   meshes, whatever hangs under its armature (weapons, props), bones no ID armature follows (their parents are kept,
-  since a bone's pose depends on them) and the collections this leaves empty. New pieces can't be attached afterwards,
-  since matching needs the game meshes; Undo brings them back.
+  since a bone's pose depends on them), the empties left holding nothing and the collections this leaves empty. New
+  pieces can't be attached afterwards, since matching needs the game meshes; Undo brings them back.
+  - **Into Collections**: moves each ID armature into its meshes' collection.
+  - **Connect Bones**: points the bones along their limbs and at what they move, connected into a skeleton: mirrored
+    bones match, and twist bones lying inside their limb are drawn as rings around it.
+- **Save Game Armature**: saves the game armature with its ID armatures to a `.blend`. In another mod of the character,
+  add it with **Add Saved** and attach new dumped meshes to it without the game model: they find their ID armature by
+  where their groups sit.
+- **Save Clean Model**: saves the selected rigged meshes of a custom model to a `.blend` as a plain model: modifiers
+  (but Subdivision) applied, into each shape key too, and an armature of just the deform bones they use, with no
+  controls, constraints, drivers or widgets. Armatures held to the main one (a tongue rig on the head) join its
+  skeleton; meshes of unrelated rigs (a prop's) are left out. UV maps that barely cover any faces are dropped and the
+  rest named `UV0`, `UV1`, … The open file is left as it is.
+- **Add Saved**: brings a saved game armature or clean model into the scene.
 
 ## Install
 
@@ -77,16 +103,24 @@ The **Updater** section of the Toolbox panel, and the add-on preferences, check 
 at most once per interval, or with the button) and install it; restart Blender afterwards. A new release also shows a
 notice at the top of the Toolbox panel. On Blender 4.2+ this needs **Allow Online Access** (Preferences > System).
 
+## Troubleshooting
+
+Errors show as a short message; the system console (Window > Toggle System Console on Windows, or the terminal Blender
+was started from) has the details. Turn on **Detailed Console Log** in the add-on preferences to have each tool write
+its steps there too, and send that along with a bug report.
+
 ## Layout
 
 | Path             | Contents                                                                                                     |
 |------------------|--------------------------------------------------------------------------------------------------------------|
 | `vertex_groups/` | IDs and naming (`ids.py`), merge / fill / remove (`cleanup.py`), weights, remap by overlap                   |
-| `mesh/`          | UV names, vertex colors, separate by material, modifiers with shape keys, merged-object sculpt               |
-| `model_swap/`    | Model Swap, custom properties copy, source / target lists                                                    |
-| `armature/`      | Matching dumped IDs to ripped bones and the ID armatures (`attach.py`), ripped model clean-up (`cleanup.py`) |
+| `mesh/`          | UV names, vertex colors, separate by material, modifiers with shape keys, shape key names, merged sculpt     |
+| `model_swap/`    | Model Swap, UV fills (`uv_fill.py`), custom properties copy, source / target lists                           |
+| `armature/`      | Matching dumped IDs to ripped bones and the ID armatures (`attach.py`), ripped model clean-up (`cleanup.py`), |
+|                  | Save Game Armature (`save.py`), Save Clean Model (`clean_model/`)                                            |
+| `textures/`      | Export Material Textures: by part and slot (`parts.py`) or by hash (`hashes.py`), `.dds` writing             |
 | `updater/`       | GitHub release check, download and install                                                                   |
-| `common/`        | Shared helpers, the per-mesh operator base, data transfer                                                    |
+| `common/`        | Shared helpers, the per-mesh operator base, data transfer, saved files, console log and error reports        |
 | `panels.py`      | The Toolbox panel and its sections in the host add-ons' tabs                                                 |
 | `settings.py`    | Scene settings, one group per feature folder (its `settings.py`)                                             |
 | `preferences.py` | Add-on preferences                                                                                           |
