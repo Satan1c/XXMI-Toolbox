@@ -5,9 +5,16 @@ import bpy
 from bpy.types import Context, EditBone, Object
 from mathutils import Matrix, Vector
 
-from ..common.utils import ToolError, deformed_by
+from ..common.utils import (
+	ToolError,
+	armature_modifier,
+	deformed_by,
+	positions,
+	transformed,
+)
 from ..vertex_groups.ids import vg_id
-from .attach import Space, editing, existing_spaces, group_centres
+from .attach import Space, editing, existing_spaces
+from .influence import Influence, elongation, extent, group_influence, merged, reach
 
 RING_KEY = "XXMI_Toolbox:Ring"
 
@@ -62,86 +69,223 @@ def _gather(space: Space) -> bool:
 	return True
 
 
-def _point_at_children(edit_bones: list[EditBone], centres: dict[str, Vector]) -> int:
-	"""Point bones at the child that carries on their chain (else at the middle of several) and connect it; point
-	the ends of chains at the middle of what they deform. Returns how many connected. Heads stay where they are, and
-	rolls stay as close to the old ones as the new direction allows."""
-	heads = [bone.head for bone in edit_bones]
-	size = (max((head - heads[0]).length for head in heads) if heads else 0.0) or 1.0
-	shortest = size * 1e-3
-	for bone in edit_bones:
-		bone.use_connect = False
-	connected = 0
+# Hand-made rigs: a bone heading within this angle of its child is taken to lead to it.
+FOLLOWS = math.radians(60)
+# What a chain's end moves counts as hanging off it in a line once it's this many times longer than wide.
+ELONGATED = 2.0
+# A bone whose head lies partway along an ancestor's segment, this near its line (relative to its length),
+# is one of the limb's bands (a twist bone).
+BAND = 0.02
+# One at its parent's own joint is a band too when what it moves runs within this angle of the parent's line
+# (a calf's helper at the knee, weighted down the calf).
+ALONG = math.radians(30)
 
-	def visit(bone: EditBone, direction: Vector | None) -> None:
-		nonlocal connected
+
+class _Pointer:
+	"""Points the bones of one armature, from the roots down: see point_at_children."""
+
+	def __init__(
+		self, edit_bones: list[EditBone], moved: dict[str, Influence], repair_only: bool
+	) -> None:
+		heads = [bone.head for bone in edit_bones]
+		size = max((head - heads[0]).length for head in heads) if heads else 0.0
+		self.shortest = (size or 1.0) * 1e-3
+		self.moved = moved
+		self.repair_only = repair_only
+		self.connected = 0
+
+	def visit(self, bone: EditBone, direction: Vector | None, beside: Vector) -> None:
+		"""Point the bone, then its children.
+		Direction is the way its chain comes in, if it carries one on; beside is its parent's way."""
 		children = sorted(
 			bone.children, key=lambda child: -(child.head - bone.head).length
 		)
-		distances = [(child.head - bone.head).length for child in children]
 		roll_axis = bone.z_axis.copy()
-		tail, chain = None, None
-		# The farthest child carries on the chain when it's clearly past the rest: the hand past the forearm's
-		# twist bones, which share its line and would end up inside it.
-		if (
-			children
-			and distances[0] > shortest
-			and (len(children) == 1 or distances[0] >= distances[1] * 1.5)
-		):
-			tail, chain = children[0].head.copy(), children[0]
+
+		chain = self._chain(bone, children)
+		if chain is not None:
+			tail = chain.head.copy()
 		elif children:
-			middle = sum((child.head for child in children), Vector()) / len(children)
-			spread = sum(distances) / len(children)
-			# Children around the head (a pelvis between spine and legs) give no direction worth taking.
-			if (middle - bone.head).length > max(spread * 0.25, shortest):
-				tail = middle
-		elif (
-			bone.name in centres
-			and (centres[bone.name] - bone.head).length > shortest * 10
-		):
-			# To the middle of what it deforms, so ends sharing a head (the halves of a bow) part ways.
-			tail = centres[bone.name].copy()
-		elif direction is not None:
-			# A chain's end carries on its parent's line.
-			tail = bone.head + direction * bone.parent.length * 0.5
+			tail = self._branch_tail(bone, children, beside)
+		else:
+			tail = self._end_tail(bone, direction, beside)
+
+		# A twist bone runs along its limb, inside it, whatever hangs off it: a sleeve's physics root.
+		band = None if self.repair_only else self._band(bone)
+		if band is not None:
+			tail, chain = band, None
+
 		if tail is not None:
 			bone.tail = tail
 			bone.align_roll(roll_axis)
 		if chain is not None:
 			chain.use_connect = True
-			connected += 1
-		for child in children:
-			visit(child, bone.vector.normalized() if child == chain else None)
+			self.connected += 1
 
+		way = bone.vector.normalized()
+		for child in children:
+			self.visit(child, way if child == chain else None, way)
+
+	def _reaches(self, bone: EditBone, point: Vector | None) -> bool:
+		"""Whether the point lies far enough from the bone's head to aim at."""
+		return point is not None and (point - bone.head).length > self.shortest * 10
+
+	def _length_along(self, bone: EditBone, way: Vector) -> float:
+		"""As far as what the bone moves goes along the way, else half its parent's length."""
+		influence = self.moved.get(bone.name)
+		length = extent(bone.head, way, influence) if influence else 0.0
+		return length if length > self.shortest * 10 else bone.parent.length * 0.5
+
+	def _chain(self, bone: EditBone, children: list[EditBone]) -> EditBone | None:
+		"""The child carrying on the bone's chain: the farthest one, when it's clearly past the rest
+		(the hand past the forearm's twist bones, which share its line and would end up inside it)."""
+		if not children:
+			return None
+		distances = [(child.head - bone.head).length for child in children[:2]]
+		if distances[0] <= self.shortest:
+			return None
+		if len(children) > 1 and distances[0] < distances[1] * 1.5:
+			return None
+
+		# A toe beside the toe joint isn't where that joint's bone leads: hand-made rigs keep it pointing ahead.
+		heading = bone.vector.angle(children[0].head - bone.head, math.pi)
+		if self.repair_only and heading > FOLLOWS:
+			return None
+		return children[0]
+
+	def _branch_tail(
+		self, bone: EditBone, children: list[EditBone], beside: Vector
+	) -> Vector | None:
+		"""Between several children: at their middle. Hand-made rigs keep their way."""
+		if self.repair_only:
+			return None
+
+		count = len(children)
+		middle = sum((child.head for child in children), Vector()) / count
+		spread = sum((child.head - bone.head).length for child in children) / count
+		if (middle - bone.head).length > max(spread * 0.25, self.shortest):
+			return middle
+
+		# Children around the head (a pelvis between spine and legs, a sleeve's root amid its strands)
+		# give no direction worth taking: it carries on its parent's way, the rip's being anything.
+		if bone.parent is not None:
+			return bone.head + beside * max(bone.length, self.shortest * 10)
+		return None
+
+	def _end_tail(
+		self, bone: EditBone, direction: Vector | None, beside: Vector
+	) -> Vector | None:
+		influence = self.moved.get(bone.name)
+		end = reach(bone.head, influence) if influence else None
+		if self.repair_only:
+			return self._repaired_end_tail(bone, direction, end)
+
+		# What it moves hangs off it in a line (a charm off a hem strand, a bow's half):
+		# towards its far end, so ends sharing a head part ways.
+		# One off its parent's chain (a shake bone beside an ornament) points at what it moves too:
+		# the way the rip pointed it is anything, and mirrored bones would part.
+		if self._reaches(bone, end) and (
+			direction is None or elongation(influence) > ELONGATED
+		):
+			return end
+
+		# A compact end (a fingertip) carries on its parent's line, as far as what it moves goes along it:
+		# aiming at a compact spread of vertices would send it out sideways.
+		# Off the chain with nothing to aim at, it takes its parent's way too.
+		if bone.parent is not None:
+			way = direction if direction is not None else beside
+			return bone.head + way * self._length_along(bone, way)
+		return None
+
+	def _repaired_end_tail(
+		self, bone: EditBone, direction: Vector | None, end: Vector | None
+	) -> Vector | None:
+		"""Only the last bone of a chain pointing back against it is turned (a ripped tail tip pointing up its tail):
+		towards what it moves if that lies ahead, else on along the chain.
+		Anything else keeps the rig's way, a compact spread (a toe's part of a shoe) being no direction to trust."""
+		if direction is None or bone.vector.angle(direction, 0.0) <= math.pi / 2:
+			return None
+		ahead = self._reaches(bone, end) and (
+			(end - bone.head).angle(direction, math.pi) < math.pi / 2
+		)
+		if ahead:
+			return end
+		return bone.head + direction * self._length_along(bone, direction)
+
+	def _band(self, bone: EditBone) -> Vector | None:
+		"""For a band of a limb, a tail on along the limb, short of its segment's end:
+		drawn as a ring, it then lies wholly inside, not on the tip."""
+		tail = self._partway_band(bone)
+		return tail if tail is not None else self._joint_band(bone)
+
+	def _partway_band(self, bone: EditBone) -> Vector | None:
+		"""A bone whose head lies partway along its parent's or grandparent's segment."""
+		for ancestor in (bone.parent, bone.parent and bone.parent.parent):
+			if ancestor is None or ancestor.length < self.shortest:
+				continue
+			way = ancestor.vector
+			share = (bone.head - ancestor.head).dot(way) / way.length_squared
+			off = (bone.head - (ancestor.head + way * share)).length
+			if 0.05 < share < 0.95 and off <= BAND * way.length:
+				return ancestor.head + way * (share + (1.0 - share) * 0.75)
+		return None
+
+	def _joint_band(self, bone: EditBone) -> Vector | None:
+		"""A bone at its parent's joint moving what runs along the parent."""
+		parent, influence = bone.parent, self.moved.get(bone.name)
+		if parent is None or influence is None or parent.length < self.shortest:
+			return None
+		if (bone.head - parent.head).length > BAND * parent.length:
+			return None
+
+		end = reach(bone.head, influence)
+		if (
+			self._reaches(bone, end)
+			and (end - bone.head).angle(parent.vector, math.pi) <= ALONG
+		):
+			return parent.head + parent.vector * 0.75
+		return None
+
+
+def point_at_children(
+	edit_bones: list[EditBone], moved: dict[str, Influence], repair_only: bool = False
+) -> int:
+	"""Point bones at the child that carries on their chain (else at the middle of several) and connect it;
+	point ends at the far end of what they move when it hangs off them in a line, else along their parent's chain.
+	Returns how many connected.
+	Heads stay where they are, and rolls stay as close to the old ones as the new direction allows.
+
+	Ripped armatures point their bones anywhere, so every bone is redone.
+	With repair_only, for rigs made by hand, bones keep the way they point unless it's plainly broken:
+	a bone already heading for its child is joined to it,
+	and a chain's last bone pointing back against it is turned round."""
+	for bone in edit_bones:
+		bone.use_connect = False
+
+	pointer = _Pointer(edit_bones, moved, repair_only)
 	for bone in edit_bones:
 		if bone.parent is None:
-			visit(bone, None)
-	return connected
+			pointer.visit(bone, None, bone.vector.normalized())
+	return pointer.connected
 
 
-def _deformed_centres(
+def _deformed_influence(
 	rig: Object, spaces: list[Space], meshes: set[Object]
-) -> dict[str, Vector]:
-	"""{game bone: armature-space middle of the dumped vertices its IDs weigh}."""
+) -> dict[str, Influence]:
+	"""{game bone: the armature-space dumped vertices its IDs weigh, and their weights}."""
 	bones = {space.armature: space.bones for space in spaces}
 	to_rig = rig.matrix_world.inverted()
-	found = {}
+	parts = []
 	for obj in meshes:
-		modifier = next(
-			(
-				mod
-				for mod in obj.modifiers
-				if mod.type == "ARMATURE" and mod.object in bones
-			),
-			None,
-		)
+		modifier = armature_modifier(obj, bones)
 		if modifier is None:
 			continue
-		for name, centre in group_centres(obj).items():
+		co = transformed(positions(obj.data), to_rig @ obj.matrix_world)
+		for name, influence in group_influence(obj, co).items():
 			bone = bones[modifier.object].get(vg_id(name))
 			if bone is not None:
-				found.setdefault(bone, []).append(to_rig @ Vector(centre))
-	return {bone: sum(points, Vector()) / len(points) for bone, points in found.items()}
+				parts.append((bone, influence))
+	return merged(parts)
 
 
 def _ring() -> Object:
@@ -210,9 +354,9 @@ def _ring_hidden(rig: Object) -> int:
 def _connect(
 	context: Context, rig: Object, spaces: list[Space], meshes: set[Object]
 ) -> tuple[int, int]:
-	centres = _deformed_centres(rig, spaces, meshes)
+	moved = _deformed_influence(rig, spaces, meshes)
 	with editing(context, rig) as edit_bones:
-		connected = _point_at_children(list(edit_bones), centres)
+		connected = point_at_children(list(edit_bones), moved)
 	# An ID bone's rest must stay its game bone's, or copying the game bone's pose would offset the dump.
 	for space in spaces:
 		with editing(context, space.armature) as edit_bones:
