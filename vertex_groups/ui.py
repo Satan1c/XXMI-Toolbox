@@ -31,6 +31,11 @@ def draw_vertex_groups(layout: UILayout, context: Context) -> None:
 	).largest = settings.fill_largest
 	row.prop(settings, "fill_largest")
 	column.operator(
+		operators.XXMI_TOOLBOX_OT_fill_missing_weights.bl_idname,
+		text="Fill Missing Weights",
+		icon="MOD_VERTEX_WEIGHT",
+	)
+	column.operator(
 		operators.XXMI_TOOLBOX_OT_remove_unused_vertex_groups.bl_idname,
 		text="Remove Unused",
 		icon="X",
@@ -56,6 +61,10 @@ def draw_vertex_group_menu(self: Menu, context: Context) -> None:
 	).mode = "ACTIVE"
 	layout.operator(
 		operators.XXMI_TOOLBOX_OT_fill_vertex_group_gaps.bl_idname, text="Fill Gaps"
+	)
+	layout.operator(
+		operators.XXMI_TOOLBOX_OT_fill_missing_weights.bl_idname,
+		text="Fill Missing Weights",
 	)
 	layout.operator(
 		operators.XXMI_TOOLBOX_OT_remove_unused_vertex_groups.bl_idname,

@@ -7,6 +7,7 @@ classes = (
 	operators.XXMI_TOOLBOX_OT_merge_vertex_groups,
 	operators.XXMI_TOOLBOX_OT_fill_vertex_group_gaps,
 	operators.XXMI_TOOLBOX_OT_remove_unused_vertex_groups,
+	operators.XXMI_TOOLBOX_OT_fill_missing_weights,
 	operators.XXMI_TOOLBOX_OT_remove_all_vertex_groups,
 )
 

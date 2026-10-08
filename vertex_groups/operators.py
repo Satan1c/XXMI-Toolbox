@@ -3,7 +3,7 @@ from bpy.types import Context, Object, Operator
 
 from ..common.operators import PerMeshOperator
 from ..common.utils import ToolError
-from . import cleanup
+from . import cleanup, weights
 from .ids import sort_vertex_groups
 from .settings import MERGE_MODES
 
@@ -57,6 +57,25 @@ class XXMI_TOOLBOX_OT_remove_unused_vertex_groups(PerMeshOperator, Operator):
 
 	def process(self, context: Context, obj: Object) -> None:
 		cleanup.remove_unused(obj, self.threshold)
+
+
+class XXMI_TOOLBOX_OT_fill_missing_weights(PerMeshOperator, Operator):
+	bl_idname = "xxmi_toolbox.fill_missing_weights"
+	bl_label = "Fill Missing Weights"
+	bl_description = (
+		"Give every vertex without any weight the weights of the nearest weighted vertex of the same mesh: vertices "
+		"without weights don't follow the skeleton in game"
+	)
+
+	def execute(self, context: Context) -> set[str]:
+		self.filled = 0
+		return super().execute(context)
+
+	def process(self, context: Context, obj: Object) -> None:
+		self.filled += weights.fill_missing(obj)
+
+	def summary(self, count: int) -> str:
+		return f"Filled the weights of {self.filled} vertices in {count} meshes"
 
 
 class XXMI_TOOLBOX_OT_remove_all_vertex_groups(PerMeshOperator, Operator):
