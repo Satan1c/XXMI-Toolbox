@@ -16,10 +16,15 @@ def draw_mesh(layout: UILayout, context: Context) -> None:
 		operators.XXMI_TOOLBOX_OT_convert_vertex_colors.bl_idname, icon="COLOR"
 	)
 
+
 	column = layout.column(align=True)
 	column.operator(
 		operators.XXMI_TOOLBOX_OT_apply_modifiers_with_shape_keys.bl_idname,
 		icon="MODIFIER",
+	)
+	column.operator(
+		operators.XXMI_TOOLBOX_OT_name_shape_keys_for_export.bl_idname,
+		icon="SHAPEKEY_DATA",
 	)
 
 	column = layout.column(align=True)

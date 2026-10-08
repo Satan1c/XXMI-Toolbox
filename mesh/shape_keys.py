@@ -1,3 +1,5 @@
+import re
+
 import bpy
 import numpy as np
 from bpy.types import Context, Mesh, Object
@@ -113,3 +115,49 @@ def apply_modifiers_with_shape_keys(
 		for m in hidden:
 			if m.name in obj.modifiers:
 				m.show_viewport = False
+
+
+# What the exporters take: the game's own keys (imported as "Deform <n>") and the mod's ("Custom <n>").
+EXPORT_NAME = re.compile(r"(DEFORM|CUSTOM)[ _\-.]?(\d{1,4})", re.IGNORECASE)
+# {new name: name before renaming}, so a "Custom <n>" can still be told apart.
+ORIGINAL_NAMES_KEY = "XXMI_Toolbox:ShapeKeyNames"
+
+
+def name_for_export(meshes: list[Object]) -> int:
+	"""Rename every shape key the exporters wouldn't take to "Custom <n>", numbering after the highest one in use.
+	A name shared by several meshes gets one number, so their keys stay one key in game."""
+	blocks = [
+		block
+		for obj in meshes
+		if obj.data.shape_keys is not None
+		for block in obj.data.shape_keys.key_blocks
+	]
+	numbers = [
+		int(match.group(2))
+		for block in blocks
+		if (match := EXPORT_NAME.fullmatch(block.name))
+		and match.group(1).upper() == "CUSTOM"
+	]
+	next_number = max(numbers, default=-1) + 1
+
+	assigned, renamed = {}, 0
+	for obj in meshes:
+		keys = obj.data.shape_keys
+		if keys is None:
+			continue
+
+		originals = dict(obj.get(ORIGINAL_NAMES_KEY, {}))
+		for block in keys.key_blocks:
+			if block == keys.reference_key or EXPORT_NAME.fullmatch(block.name):
+				continue
+			if block.name not in assigned:
+				assigned[block.name] = next_number
+				next_number += 1
+			new_name = f"Custom {assigned[block.name]}"
+			originals[new_name] = block.name
+			block.name = new_name
+			renamed += 1
+		# The exporters tell the base key by this name; renamed last, so no other key holds it by then.
+		keys.reference_key.name = "Basis"
+		obj[ORIGINAL_NAMES_KEY] = originals
+	return renamed

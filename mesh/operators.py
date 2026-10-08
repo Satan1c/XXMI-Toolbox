@@ -129,6 +129,27 @@ class XXMI_TOOLBOX_OT_apply_modifiers_with_shape_keys(Operator):
 		return {"FINISHED"}
 
 
+class XXMI_TOOLBOX_OT_name_shape_keys_for_export(Operator):
+	bl_idname = "xxmi_toolbox.name_shape_keys_for_export"
+	bl_label = "Name Shape Keys for Export"
+	bl_description = (
+		"Rename the selected meshes' shape keys to what the exporters take: keys already named Deform <n> (the game's "
+		"own) or Custom <n> stay, every other one becomes Custom <n>, one number per name across the selection. Select "
+		"all of a part's meshes together. The old names are kept in each mesh's custom properties"
+	)
+	bl_options = {"REGISTER", "UNDO"}
+
+	@classmethod
+	def poll(cls, context: Context) -> bool:
+		return any(obj.data.shape_keys for obj in selected_meshes(context))
+
+	def execute(self, context: Context) -> set[str]:
+		with object_mode(context):
+			count = shape_keys.name_for_export(selected_meshes(context))
+		self.report({"INFO"}, f"Renamed {count} shape keys to Custom <n>")
+		return {"FINISHED"}
+
+
 class XXMI_TOOLBOX_OT_create_merged_object(Operator):
 	bl_idname = "xxmi_toolbox.create_merged_object"
 	bl_label = "Create Merged Object"
