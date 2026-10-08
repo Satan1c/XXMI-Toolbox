@@ -104,10 +104,12 @@ def save_clean_model(
 
 	skeleton, materials = None, DetachedMaterials()
 	try:
-		for obj, copy in copies.items():
-			keep_own_groups(copy, part_of[obj.find_armature()])
+		read = {
+			copy: keep_own_groups(copy, part_of[obj.find_armature()])
+			for obj, copy in copies.items()
+		}
 		with timed("building the skeleton"):
-			moved, shared = influence(list(copies.values()))
+			moved, shared = influence(read)
 			skeleton = deform_skeleton(context, parts, moved, shared)
 		bone_count = len(skeleton.data.bones)
 

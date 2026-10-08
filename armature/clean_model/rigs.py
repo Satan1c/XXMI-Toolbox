@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 
 from bpy.types import Object
 
-from ...vertex_groups.weights import read_weights
+from ...vertex_groups.weights import Weights, read_weights
 
 
 @dataclass
@@ -82,15 +82,17 @@ def rig_parts(meshes: list[Object], main: Object) -> tuple[list[Part], list[str]
 	return list(parts.values()), left_out
 
 
-def keep_own_groups(copy: Object, part: Part) -> None:
+def keep_own_groups(copy: Object, part: Part) -> Weights:
 	"""Keep only the groups of the copy's own armature, under their skeleton names, and note the ones it weighs:
-	another armature's group of the same name would start moving it."""
+	another armature's group of the same name would start moving it. Returns the copy's weights, read once."""
 	for vg in list(copy.vertex_groups):
 		if vg.name in part.names:
 			vg.name = part.names[vg.name]
 		else:
 			copy.vertex_groups.remove(vg)
-	_, groups, weights = read_weights(copy.data)
+	read = read_weights(copy.data)
+	_, groups, weights = read
 	part.used.update(
 		copy.vertex_groups[int(i)].name for i in set(groups[weights > 0.0])
 	)
+	return read

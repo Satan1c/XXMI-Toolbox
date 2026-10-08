@@ -115,14 +115,18 @@ def _move(rig: Object, game: list[Object], matrix: Matrix) -> None:
 
 
 def _align(
-	rig: Object, game: list[Object], dumped: list[Object], settled: bool
+	rig: Object,
+	game: list[Object],
+	dumped: list[Object],
+	settled: bool,
+	centres: dict[Object, dict[str, np.ndarray]],
 ) -> bool:
 	"""Mirror the game model if that's how it lines up with the dump, unless earlier pieces already settled it."""
 	game_centres = np.array(
-		[centre for obj in game for centre in group_centres(obj).values()]
+		[centre for obj in game for centre in centres[obj].values()]
 	)
 	dumped_centres = np.array(
-		[centre for obj in dumped for centre in group_centres(obj).values()]
+		[centre for obj in dumped for centre in centres[obj].values()]
 	)
 	if not len(game_centres) or not len(dumped_centres):
 		raise ToolError(
@@ -268,12 +272,18 @@ def _build(context: Context, rig: Object, space: Space) -> Object:
 	return armature
 
 
-def record_centres(space: Space) -> None:
+def record_centres(
+	space: Space, centres: dict[Object, dict[str, np.ndarray]] | None = None
+) -> None:
+	"""Store where each ID's vertices sit on the ID armature, from the meshes' group centres if found already."""
 	armature = space.armature
 	inverse = armature.matrix_world.inverted()
 	stored = dict(armature.get(CENTRES_KEY, {}))
 	for obj in space.meshes:
-		for name, centre in group_centres(obj).items():
+		found = centres.get(obj) if centres else None
+		for name, centre in (
+			found if found is not None else group_centres(obj)
+		).items():
 			group_id = vg_id(name)
 			if group_id in space.bones:
 				stored.setdefault(str(group_id), list(inverse @ Vector(centre)))
@@ -383,7 +393,9 @@ def attach(context: Context, rig: Object, dumped: list[Object]) -> list[str]:
 	if shift is not None:
 		_move(rig, game, Matrix.Translation(shift))
 		context.view_layer.update()
-	mirrored = _align(rig, game, dumped, settled=bool(spaces))
+	# In world space, so found once the game model has moved; mirroring moves only the game's.
+	centres = {obj: group_centres(obj) for obj in [*game, *dumped]}
+	mirrored = _align(rig, game, dumped, bool(spaces), centres)
 	maps = _bone_maps(context, rig, game, dumped)
 	known = len(spaces)
 	unmatched = []
@@ -413,7 +425,7 @@ def attach(context: Context, rig: Object, dumped: list[Object]) -> list[str]:
 		armature.hide_set(True)
 		for obj in space.meshes:
 			follow(obj, armature)
-		record_centres(space)
+		record_centres(space, centres)
 
 	attached = sum(len(space.meshes) for space in spaces)
 	lines = [

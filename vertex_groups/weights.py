@@ -11,22 +11,28 @@ Weights = tuple[np.ndarray, np.ndarray, np.ndarray]
 
 
 def read_weights(mesh: Mesh) -> Weights:
-	verts, groups, weights = [], [], []
+	"""Every (vertex, group, weight) of the mesh, as three arrays. Blender has no bulk read for these, so it's
+	slow on big meshes: read once and pass the arrays on."""
+	counts, groups, weights = [], [], []
+	add_count, add_group, add_weight = counts.append, groups.append, weights.append
 	for vert in mesh.vertices:
-		for elem in vert.groups:
-			verts.append(vert.index)
-			groups.append(elem.group)
-			weights.append(elem.weight)
+		elements = vert.groups
+		add_count(len(elements))
+		for element in elements:
+			add_group(element.group)
+			add_weight(element.weight)
 	return (
-		np.array(verts, dtype=np.int64),
+		np.repeat(np.arange(len(counts), dtype=np.int64), counts),
 		np.array(groups, dtype=np.int64),
 		np.array(weights, dtype=np.float64),
 	)
 
 
 def is_weighted(obj: Object) -> bool:
-	_, _, weights = read_weights(obj.data)
-	return bool((weights > 0.0).any())
+	"""Whether any vertex has a weight, stopping at the first."""
+	return any(
+		element.weight > 0.0 for vert in obj.data.vertices for element in vert.groups
+	)
 
 
 def unweighted_vertex_count(obj: Object) -> int:

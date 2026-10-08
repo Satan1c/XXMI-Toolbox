@@ -9,7 +9,7 @@ from mathutils.geometry import intersect_point_line
 
 from ...common.log import log
 from ...common.utils import positions
-from ...vertex_groups.weights import read_weights
+from ...vertex_groups.weights import Weights
 from ..attach import editing
 from ..cleanup import point_at_children
 from ..influence import Influence, group_influence, merged
@@ -47,20 +47,19 @@ class _Joint:
 
 
 def influence(
-	meshes: list[Object],
+	read: dict[Object, Weights],
 ) -> tuple[dict[str, Influence], dict[frozenset[str], float]]:
 	"""Per group, the vertices it weighs and their weights;
 	per pair of groups, how much weight they share where they meet (each vertex's two strongest).
-	The meshes are in world space."""
+	Takes each world-space mesh's weights, read already."""
 	moved = merged(
 		(name, part)
-		for obj in meshes
-		for name, part in group_influence(obj, positions(obj.data)).items()
+		for obj, weights in read.items()
+		for name, part in group_influence(obj, positions(obj.data), weights).items()
 	)
 
 	shared = {}
-	for obj in meshes:
-		verts, groups, weights = read_weights(obj.data)
+	for obj, (verts, groups, weights) in read.items():
 		names = [vg.name for vg in obj.vertex_groups]
 		order = np.lexsort((-weights, verts))
 		v, g, w = verts[order], groups[order], weights[order]

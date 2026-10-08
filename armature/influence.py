@@ -4,15 +4,18 @@ import numpy as np
 from bpy.types import Object
 from mathutils import Vector
 
-from ..vertex_groups.weights import read_weights
+from ..vertex_groups.weights import Weights, read_weights
 
 # What a bone moves: the points of its group and their weights.
 Influence = tuple[np.ndarray, np.ndarray]
 
 
-def group_influence(obj: Object, co: np.ndarray) -> dict[str, Influence]:
-	"""{group name: its weighted vertices, at the given positions, and their weights}."""
-	verts, groups, weights = read_weights(obj.data)
+def group_influence(
+	obj: Object, co: np.ndarray, read: Weights | None = None
+) -> dict[str, Influence]:
+	"""{group name: its weighted vertices, at the given positions, and their weights}, from the mesh's weights if
+	they're read already."""
+	verts, groups, weights = read if read is not None else read_weights(obj.data)
 	names = [vg.name for vg in obj.vertex_groups]
 	found = {}
 	for group in np.unique(groups):
