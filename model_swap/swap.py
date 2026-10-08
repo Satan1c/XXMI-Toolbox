@@ -48,6 +48,42 @@ def _cleanup_weights(target: Object) -> None:
 	sort_vertex_groups(target)
 
 
+def _remap_weighted(
+	context: Context,
+	targets: list[Object],
+	sources: list[Object],
+	joined: Object,
+	messages: list[str],
+) -> list[Object]:
+	"""Rename the weighted targets' groups after the source's,
+	in one pass so every piece gets the same name for the same bone. Returns the targets remapped."""
+	remapped = [target for target in targets if is_weighted(target)]
+	if not remapped:
+		return []
+	renamed, least_certain = remap.remap(context, remapped, sources, joined)
+	messages.append(f"Remapped {renamed} vertex groups on {len(remapped)} meshes")
+	if least_certain:
+		messages.append(
+			"Least certain: "
+			+ ", ".join(f"{a} -> {b} ({share:.0%})" for share, a, b in least_certain)
+		)
+	return remapped
+
+
+def _swap_weights(
+	target: Object, joined: Object, remapped: list[Object], messages: list[str]
+) -> None:
+	if target not in remapped:
+		target.vertex_groups.clear()
+		transfer(joined, target, "VGROUP_WEIGHTS", vert_mapping="POLYINTERP_NEAREST")
+	_cleanup_weights(target)
+	unweighted = unweighted_vertex_count(target)
+	if unweighted:
+		messages.append(
+			f"WARNING: {target.name}: {unweighted} vertices have no weights"
+		)
+
+
 def model_swap(
 	context: Context,
 	sources: list[Object],
@@ -60,25 +96,10 @@ def model_swap(
 	messages = []
 	with joined_source(
 		context, sources if colors or weights else sources[:1]
-	) as transfer_source:
+	) as joined:
 		remapped = []
 		if weights and keep_target_weights:
-			remapped = [target for target in targets if is_weighted(target)]
-		if remapped:
-			# One pass over all weighted targets so every piece gets the same name for the same bone.
-			renamed, least_certain = remap.remap(
-				context, remapped, sources, transfer_source
-			)
-			messages.append(
-				f"Remapped {renamed} vertex groups on {len(remapped)} meshes"
-			)
-			if least_certain:
-				messages.append(
-					"Least certain: "
-					+ ", ".join(
-						f"{a} -> {b} ({share:.0%})" for share, a, b in least_certain
-					)
-				)
+			remapped = _remap_weighted(context, targets, sources, joined, messages)
 
 		for target in targets:
 			try:
@@ -89,22 +110,9 @@ def model_swap(
 							f"WARNING: {target.name} has {missing} fewer UV maps than the source"
 						)
 				if colors:
-					swap_colors(transfer_source, target)
+					swap_colors(joined, target)
 				if weights:
-					if target not in remapped:
-						target.vertex_groups.clear()
-						transfer(
-							transfer_source,
-							target,
-							"VGROUP_WEIGHTS",
-							vert_mapping="POLYINTERP_NEAREST",
-						)
-					_cleanup_weights(target)
-					unweighted = unweighted_vertex_count(target)
-					if unweighted:
-						messages.append(
-							f"WARNING: {target.name}: {unweighted} vertices have no weights"
-						)
+					_swap_weights(target, joined, remapped, messages)
 			except ToolError as e:
 				messages.append(f"ERROR: {e}")
 	return messages
