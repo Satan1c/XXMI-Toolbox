@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 import bpy
 import numpy as np
 from bpy.types import Context, Mesh, Object
@@ -8,6 +10,9 @@ from .weights import is_weighted, read_weights
 
 # A target's vertices with the source weights sampled at them, and the source group names.
 Reference = tuple[np.ndarray, np.ndarray, np.ndarray, list[str]]
+# Given the summed overlaps per target group and the source group names,
+# the {target group: (source group, share)} to use instead of the most overlapped.
+Choose = Callable[[dict[str, np.ndarray], list[str]], dict[str, tuple[str, float]]]
 
 
 def _vertex_areas(mesh: Mesh) -> np.ndarray:
@@ -133,11 +138,12 @@ def remap(
 	targets: list[Object],
 	sources: list[Object],
 	joined: Object | None = None,
+	choose: Choose | None = None,
 ) -> tuple[int, list[tuple[float, str, str]]]:
 	"""Rename every target group after the source group it overlaps most. Returns the renamed count and the least certain matches."""
 	if joined is None:
 		with joined_source(context, sources) as joined:
-			return remap(context, targets, sources, joined)
+			return remap(context, targets, sources, joined, choose)
 	source_names, matrices = overlaps(context, targets, joined)
 
 	# Summed per name across all targets, so every piece gets the same answer for the same bone.
@@ -152,6 +158,8 @@ def remap(
 		name: (source_names[int(row.argmax())], float(row.max() / row.sum()))
 		for name, row in totals.items()
 	}
+	if choose is not None:
+		plan.update(choose(totals, source_names))
 
 	renamed = 0
 	for target in targets:

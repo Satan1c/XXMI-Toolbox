@@ -1,4 +1,4 @@
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 
 from bpy.props import EnumProperty, IntProperty
 from bpy.types import Context, Object, Operator, bpy_prop_collection
@@ -44,6 +44,18 @@ def _swap_objects(
 	return settings, sources, targets
 
 
+# Experimental tools can pick the remap's groups: each gives a remap.Choose for the sources, or None.
+remap_choosers: list[Callable[[Context, list[Object]], remap.Choose | None]] = []
+
+
+def _remap_choose(context: Context, sources: list[Object]) -> remap.Choose | None:
+	for chooser in remap_choosers:
+		choose = chooser(context, sources)
+		if choose is not None:
+			return choose
+	return None
+
+
 class _SwapOperator:
 	bl_options = {"REGISTER", "UNDO"}
 
@@ -65,7 +77,12 @@ class XXMI_TOOLBOX_OT_remap_vertex_groups(_SwapOperator, Operator):
 		try:
 			_, sources, targets = _swap_objects(context)
 			with object_mode(context):
-				renamed, least_certain = remap.remap(context, targets, sources)
+				renamed, least_certain = remap.remap(
+					context,
+					targets,
+					sources,
+					choose=_remap_choose(context, sources),
+				)
 		except ToolError as e:
 			self.report({"ERROR"}, str(e))
 			return {"CANCELLED"}
@@ -105,6 +122,7 @@ class XXMI_TOOLBOX_OT_model_swap(_SwapOperator, Operator):
 					colors=settings.swap_colors,
 					weights=settings.swap_weights,
 					keep_target_weights=settings.swap_weights_mode == "REMAP",
+					remap_choose=_remap_choose(context, sources),
 				)
 			except ToolError as e:
 				self.report({"ERROR"}, str(e))

@@ -150,6 +150,7 @@ def _remap_weighted(
 	targets: list[Object],
 	sources: list[Object],
 	joined: Object,
+	choose: remap.Choose | None,
 	messages: list[str],
 ) -> list[Object]:
 	"""Rename the weighted targets' groups after the source's,
@@ -157,7 +158,7 @@ def _remap_weighted(
 	remapped = [target for target in targets if is_weighted(target)]
 	if not remapped:
 		return []
-	renamed, least_certain = remap.remap(context, remapped, sources, joined)
+	renamed, least_certain = remap.remap(context, remapped, sources, joined, choose)
 	messages.append(f"Remapped {renamed} vertex groups on {len(remapped)} meshes")
 	if least_certain:
 		messages.append(
@@ -191,6 +192,7 @@ def model_swap(
 	keep_target_weights: bool = True,
 	uv_slots: list[int] | None = None,
 	uv_modes: list[str] | None = None,
+	remap_choose: remap.Choose | None = None,
 ) -> list[str]:
 	messages = []
 	# UV maps a target hasn't got come from the dump, so every source piece goes into it.
@@ -199,7 +201,9 @@ def model_swap(
 	) as joined:
 		remapped = []
 		if weights and keep_target_weights:
-			remapped = _remap_weighted(context, targets, sources, joined, messages)
+			remapped = _remap_weighted(
+				context, targets, sources, joined, remap_choose, messages
+			)
 
 		in_dump = {layer.name for layer in joined.data.uv_layers}
 		fills = UVFills(sources[0], targets)
