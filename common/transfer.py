@@ -2,7 +2,10 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 import bpy
+import numpy as np
 from bpy.types import Context, Object
+
+from .utils import positions
 
 
 @contextmanager
@@ -47,12 +50,41 @@ def joined_source(context: Context, sources: list[Object]) -> Iterator[Object]:
 				pass
 
 
+@contextmanager
+def _as_shaped(target: Object) -> Iterator[None]:
+	# Data Transfer samples the target at its base positions, ignoring shape keys:
+	# a mesh reshaped by one must be sampled as it looks.
+	mesh = target.data
+	if mesh.shape_keys is None:
+		yield
+		return
+
+	active = target.active_shape_key_index
+	mix = target.shape_key_add(name="XXMI_Toolbox_mix", from_mix=True)
+	shaped = np.empty(len(mesh.vertices) * 3)
+	mix.data.foreach_get("co", shaped)
+	target.shape_key_remove(mix)
+	target.active_shape_key_index = active
+
+	base = positions(mesh).ravel()
+	mesh.vertices.foreach_set("co", shaped)
+	mesh.update()
+	try:
+		yield
+	finally:
+		mesh.vertices.foreach_set("co", base)
+		mesh.update()
+
+
 def transfer(source: Object, target: Object, data_type: str, **mapping: str) -> None:
-	with bpy.context.temp_override(
-		object=source,
-		active_object=source,
-		selected_objects=[source, target],
-		selected_editable_objects=[target],
+	with (
+		_as_shaped(target),
+		bpy.context.temp_override(
+			object=source,
+			active_object=source,
+			selected_objects=[source, target],
+			selected_editable_objects=[target],
+		),
 	):
 		bpy.ops.object.data_transfer(
 			data_type=data_type,
